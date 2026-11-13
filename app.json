@@ -1,0 +1,14 @@
+{
+  "expo": {
+    "name": "APNA",
+    "slug": "apna-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.ashiqali.apna",
+      "versionCode": 1
+    }
+  }
+}
