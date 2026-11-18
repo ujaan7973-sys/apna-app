@@ -1,124 +1,160 @@
 
 import React, { useState } from "react";
 import {
-  SafeAreaView, View, Text, TextInput, TouchableOpacity,
-  ScrollView, StyleSheet, Alert, StatusBar
+  SafeAreaView,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  StyleSheet,
+  Alert,
+  StatusBar
 } from "react-native";
-
-const videos = [
-  { id: 1, user: "APNA Creator", title: "Welcome to APNA ❤️", likes: 1250, comments: 85 },
-  { id: 2, user: "Pakistan Star", title: "My beautiful Pakistan 🇵🇰", likes: 890, comments: 42 },
-  { id: 3, user: "Video King", title: "New video is here 🔥", likes: 560, comments: 29 }
-];
+import * as ImagePicker from "expo-image-picker";
 
 export default function App() {
   const [tab, setTab] = useState("Home");
-  const [items, setItems] = useState(videos);
+  const [videos, setVideos] = useState([]);
   const [liked, setLiked] = useState([]);
-  const [following, setFollowing] = useState([]);
-  const [search, setSearch] = useState("");
   const [caption, setCaption] = useState("");
-  const [comment, setComment] = useState("");
-  const [selected, setSelected] = useState(null);
-  const [comments, setComments] = useState({});
+  const [selectedVideo, setSelectedVideo] = useState(null);
+  const [search, setSearch] = useState("");
   const [language, setLanguage] = useState("English");
+  const [comments, setComments] = useState({});
+  const [commentText, setCommentText] = useState("");
+  const [commentVideo, setCommentVideo] = useState(null);
 
-  const urdu = language === "Urdu";
-  const t = (en, ur) => urdu ? ur : en;
+  const isUrdu = language === "Urdu";
 
-  const likeVideo = (id) => {
-    setLiked(old => old.includes(id)
-      ? old.filter(x => x !== id) : [...old, id]);
+  const chooseVideo = async () => {
+    try {
+      const permission =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+      if (!permission.granted) {
+        Alert.alert("Permission", "Please allow gallery access.");
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["videos"],
+        allowsEditing: false,
+        quality: 1
+      });
+
+      if (!result.canceled && result.assets.length > 0) {
+        setSelectedVideo(result.assets[0]);
+      }
+    } catch (error) {
+      Alert.alert("Error", "Could not open gallery.");
+    }
   };
 
-  const followUser = (name) => {
-    setFollowing(old => old.includes(name)
-      ? old.filter(x => x !== name) : [...old, name]);
+  const publishVideo = () => {
+    if (!selectedVideo) {
+      Alert.alert("APNA", "Please select a video first.");
+      return;
+    }
+
+    if (!caption.trim()) {
+      Alert.alert("APNA", "Please write a caption.");
+      return;
+    }
+
+    const newVideo = {
+      id: Date.now().toString(),
+      uri: selectedVideo.uri,
+      title: caption.trim(),
+      user: "APNA Creator",
+      likes: 0
+    };
+
+    setVideos(previous => [newVideo, ...previous]);
+    setSelectedVideo(null);
+    setCaption("");
+    setTab("Home");
+
+    Alert.alert("APNA", "Video added to your local feed!");
+  };
+
+  const toggleLike = id => {
+    setLiked(previous =>
+      previous.includes(id)
+        ? previous.filter(item => item !== id)
+        : [...previous, id]
+    );
+  };
+
+  const openComments = id => {
+    setCommentVideo(id);
+    setTab("Comments");
   };
 
   const addComment = () => {
-    if (!comment.trim() || !selected) return;
-    setComments(old => ({
-      ...old,
-      [selected]: [...(old[selected] || []), comment.trim()]
+    if (!commentText.trim() || !commentVideo) return;
+
+    setComments(previous => ({
+      ...previous,
+      [commentVideo]: [
+        ...(previous[commentVideo] || []),
+        commentText.trim()
+      ]
     }));
-    setComment("");
+
+    setCommentText("");
   };
 
-  const publish = () => {
-    if (!caption.trim()) {
-      Alert.alert("APNA", "Please write a video caption.");
-      return;
-    }
-    Alert.alert(
-      "APNA Upload",
-      "This demo needs video storage and backend connection for real publishing."
-    );
+  const labels = {
+    Home: isUrdu ? "ہوم" : "Home",
+    Search: isUrdu ? "تلاش" : "Search",
+    Upload: isUrdu ? "اپلوڈ" : "Upload",
+    Inbox: isUrdu ? "پیغامات" : "Inbox",
+    Profile: isUrdu ? "پروفائل" : "Profile"
   };
 
   const Header = () => (
     <View style={styles.header}>
       <Text style={styles.logo}>APNA</Text>
       <TouchableOpacity
-        onPress={() => setLanguage(urdu ? "English" : "Urdu")}>
-        <Text style={styles.lang}>{urdu ? "English" : "اردو"}</Text>
+        onPress={() =>
+          setLanguage(isUrdu ? "English" : "Urdu")
+        }
+      >
+        <Text style={styles.language}>
+          {isUrdu ? "English" : "اردو"}
+        </Text>
       </TouchableOpacity>
     </View>
   );
 
-  const Nav = () => {
-    const tabs = [
-      ["Home", "🏠"], ["Search", "🔍"], ["Upload", "➕"],
-      ["Inbox", "💬"], ["Profile", "👤"]
-    ];
-    return (
-      <View style={styles.nav}>
-        {tabs.map(([name, emoji]) => (
-          <TouchableOpacity key={name}
-            style={styles.navItem} onPress={() => setTab(name)}>
-            <Text style={{fontSize: 22}}>{emoji}</Text>
-            <Text style={[styles.navText,
-              tab === name && styles.activeText]}>
-              {t(name, {
-                Home:"ہوم", Search:"تلاش", Upload:"اپلوڈ",
-                Inbox:"پیغامات", Profile:"پروفائل"
-              }[name])}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </View>
-    );
-  };
-
   const VideoCard = ({ item }) => (
     <View style={styles.videoCard}>
-      <View style={styles.videoScreen}>
-        <Text style={styles.play}>▶</Text>
-        <Text style={styles.demoText}>APNA VIDEO</Text>
-        <Text style={styles.demoSmall}>
-          Video player connects with backend
+      <View style={styles.videoPlaceholder}>
+        <Text style={styles.playIcon}>▶</Text>
+        <Text style={styles.videoLabel}>
+          {item.uri ? "VIDEO SELECTED" : "APNA VIDEO"}
+        </Text>
+        <Text style={styles.videoNote}>
+          Video preview will be added in the next stage
         </Text>
       </View>
-      <View style={styles.videoInfo}>
+
+      <View style={styles.videoDetails}>
         <Text style={styles.username}>@{item.user}</Text>
         <Text style={styles.caption}>{item.title}</Text>
+
         <View style={styles.actions}>
-          <TouchableOpacity onPress={() => likeVideo(item.id)}>
-            <Text style={styles.action}>
-              {liked.includes(item.id) ? "❤️" : "🤍"} {item.likes +
-                (liked.includes(item.id) ? 1 : 0)}
+          <TouchableOpacity onPress={() => toggleLike(item.id)}>
+            <Text style={styles.actionText}>
+              {liked.includes(item.id) ? "❤️" : "🤍"}{" "}
+              {item.likes + (liked.includes(item.id) ? 1 : 0)}
             </Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => {
-            setSelected(item.id);
-            setTab("Comments");
-          }}>
-            <Text style={styles.action}>💬 {item.comments +
-              (comments[item.id]?.length || 0)}</Text>
-          </TouchableOpacity>
-          <TouchableOpacity onPress={() => followUser(item.user)}>
-            <Text style={styles.action}>
-              {following.includes(item.user) ? "Following ✓" : "+ Follow"}
+
+          <TouchableOpacity onPress={() => openComments(item.id)}>
+            <Text style={styles.actionText}>
+              💬 {comments[item.id]?.length || 0}
             </Text>
           </TouchableOpacity>
         </View>
@@ -126,165 +162,372 @@ export default function App() {
     </View>
   );
 
-  const Content = () => {
+  const renderContent = () => {
     if (tab === "Home") {
       return (
-        <ScrollView>
-          <Text style={styles.heading}>{t("For You", "آپ کے لیے")}</Text>
-          {items.map(item => <VideoCard key={item.id} item={item}/>)}
+        <ScrollView style={styles.content}>
+          <Text style={styles.heading}>
+            {isUrdu ? "آپ کے لیے" : "For You"}
+          </Text>
+
+          {videos.length === 0 && (
+            <Text style={styles.info}>
+              Welcome to APNA! Upload your first video.
+            </Text>
+          )}
+
+          {videos.map(item => (
+            <VideoCard key={item.id} item={item} />
+          ))}
         </ScrollView>
       );
     }
 
     if (tab === "Search") {
+      const filtered = videos.filter(item =>
+        item.title.toLowerCase().includes(search.toLowerCase())
+      );
+
       return (
-        <View style={styles.page}>
-          <Text style={styles.heading}>{t("Search APNA", "تلاش کریں")}</Text>
-          <TextInput style={styles.input} value={search}
+        <ScrollView style={styles.content}>
+          <Text style={styles.heading}>Search APNA</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Search videos..."
+            placeholderTextColor="#999"
+            value={search}
             onChangeText={setSearch}
-            placeholder="Search creators or videos..."
-            placeholderTextColor="#888"/>
-          {items.filter(v =>
-            (v.user + v.title).toLowerCase().includes(search.toLowerCase())
-          ).map(v => <VideoCard key={v.id} item={v}/>)}
-        </View>
+          />
+
+          {filtered.map(item => (
+            <VideoCard key={item.id} item={item} />
+          ))}
+        </ScrollView>
       );
     }
 
     if (tab === "Upload") {
       return (
-        <View style={styles.page}>
-          <Text style={styles.heading}>➕ Upload Video</Text>
-          <Text style={styles.info}>Share your creativity with APNA.</Text>
-          <TextInput style={styles.input} placeholder="Video caption..."
-            placeholderTextColor="#888" value={caption}
-            onChangeText={setCaption}/>
-          <TouchableOpacity style={styles.primary} onPress={publish}>
-            <Text style={styles.primaryText}>Choose & Publish Video</Text>
+        <ScrollView style={styles.content}>
+          <Text style={styles.heading}>Create Video</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Write your video caption..."
+            placeholderTextColor="#999"
+            value={caption}
+            onChangeText={setCaption}
+          />
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={chooseVideo}
+          >
+            <Text style={styles.buttonText}>
+              📁 Choose Video from Gallery
+            </Text>
           </TouchableOpacity>
+
+          {selectedVideo && (
+            <Text style={styles.info}>
+              ✅ Video selected:{" "}
+              {selectedVideo.fileName || "Ready"}
+            </Text>
+          )}
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={publishVideo}
+          >
+            <Text style={styles.buttonText}>
+              🚀 Publish Video
+            </Text>
+          </TouchableOpacity>
+
           <Text style={styles.info}>
-            Real video selection and publishing will be enabled after
-            connecting video storage.
+            Note: This version adds videos to this phone's
+            temporary local feed. Online sharing and permanent
+            storage will need a backend.
           </Text>
-        </View>
+        </ScrollView>
       );
     }
 
     if (tab === "Inbox") {
       return (
-        <View style={styles.page}>
-          <Text style={styles.heading}>💬 {t("Inbox", "پیغامات")}</Text>
-          <Text style={styles.info}>Your messages will appear here.</Text>
-          <Text style={styles.info}>پیغامات کا نظام جلد شامل ہوگا۔</Text>
+        <View style={styles.content}>
+          <Text style={styles.heading}>Inbox</Text>
+          <Text style={styles.info}>
+            Messages feature is coming soon.
+          </Text>
         </View>
       );
     }
 
     if (tab === "Profile") {
       return (
-        <View style={styles.page}>
+        <View style={styles.content}>
           <Text style={styles.avatar}>👤</Text>
           <Text style={styles.heading}>APNA Creator</Text>
           <Text style={styles.info}>@myapna</Text>
-          <View style={styles.stats}>
-            <Text style={styles.stat}>0{"\n"}Videos</Text>
-            <Text style={styles.stat}>0{"\n"}Followers</Text>
-            <Text style={styles.stat}>0{"\n"}Following</Text>
-          </View>
-          <Text style={styles.heading}>💰 Creator Earnings</Text>
-          <Text style={styles.earning}>Rs. 0.00</Text>
-          <Text style={styles.info}>
-            Real earnings require verified monetization,
-            eligible views and payment integration.
+
+          <Text style={styles.profileStat}>
+            Videos: {videos.length}
           </Text>
-          <TouchableOpacity style={styles.primary}
-            onPress={() => Alert.alert("APNA", "Account settings coming soon.")}>
-            <Text style={styles.primaryText}>⚙ Settings</Text>
-          </TouchableOpacity>
+
+          <Text style={styles.heading}>Creator Earnings</Text>
+          <Text style={styles.earning}>Rs. 0.00</Text>
+
+          <Text style={styles.info}>
+            Real creator earnings require a payment and
+            monetization system.
+          </Text>
         </View>
       );
     }
 
     if (tab === "Comments") {
       return (
-        <View style={styles.page}>
+        <View style={styles.content}>
           <Text style={styles.heading}>Comments</Text>
-          <ScrollView>
-            {(comments[selected] || []).map((c, i) =>
-              <Text style={styles.info} key={i}>👤 {c}</Text>
-            )}
+
+          <ScrollView style={{ flex: 1 }}>
+            {(comments[commentVideo] || []).map((item, index) => (
+              <Text key={index} style={styles.comment}>
+                👤 {item}
+              </Text>
+            ))}
           </ScrollView>
-          <TextInput style={styles.input} value={comment}
-            onChangeText={setComment} placeholder="Write a comment..."
-            placeholderTextColor="#888"/>
-          <TouchableOpacity style={styles.primary} onPress={addComment}>
-            <Text style={styles.primaryText}>Post Comment</Text>
+
+          <TextInput
+            style={styles.input}
+            placeholder="Write a comment..."
+            placeholderTextColor="#999"
+            value={commentText}
+            onChangeText={setCommentText}
+          />
+
+          <TouchableOpacity
+            style={styles.primaryButton}
+            onPress={addComment}
+          >
+            <Text style={styles.buttonText}>Send Comment</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => setTab("Home")}>
-            <Text style={styles.info}>← Back to Home</Text>
+
+          <TouchableOpacity
+            onPress={() => setTab("Home")}
+          >
+            <Text style={styles.backText}>← Back to Home</Text>
           </TouchableOpacity>
         </View>
       );
     }
+
     return null;
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <StatusBar backgroundColor="#101010" barStyle="light-content"/>
-      <Header/>
-      <View style={styles.content}>
-        <Content/>
+      <StatusBar barStyle="light-content" backgroundColor="#111" />
+
+      <Header />
+
+      <View style={styles.main}>
+        {renderContent()}
       </View>
-      <Nav/>
+
+      {tab !== "Comments" && (
+        <View style={styles.navigation}>
+          {Object.keys(labels).map(name => (
+            <TouchableOpacity
+              key={name}
+              style={styles.navItem}
+              onPress={() => setTab(name)}
+            >
+              <Text style={styles.navIcon}>
+                {{
+                  Home: "🏠",
+                  Search: "🔍",
+                  Upload: "➕",
+                  Inbox: "💬",
+                  Profile: "👤"
+                }[name]}
+              </Text>
+
+              <Text
+                style={[
+                  styles.navText,
+                  tab === name && styles.activeNav
+                ]}
+              >
+                {labels[name]}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex:1, backgroundColor:"#101010" },
+  container: {
+    flex: 1,
+    backgroundColor: "#111"
+  },
   header: {
-    height:60, backgroundColor:"#171717", flexDirection:"row",
-    justifyContent:"space-between", alignItems:"center", paddingHorizontal:18
+    height: 58,
+    backgroundColor: "#191919",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 18
   },
-  logo: { color:"#ff3155", fontSize:28, fontWeight:"900", letterSpacing:2 },
-  lang: { color:"white", fontSize:16, padding:10 },
-  content: { flex:1 },
-  heading: { color:"white", fontSize:23, fontWeight:"bold", margin:16 },
-  videoCard: { backgroundColor:"#202020", margin:10, borderRadius:14, overflow:"hidden" },
-  videoScreen: {
-    height:260, backgroundColor:"#30303a", alignItems:"center",
-    justifyContent:"center"
+  logo: {
+    color: "#ff3155",
+    fontSize: 28,
+    fontWeight: "bold"
   },
-  play: { color:"white", fontSize:45 },
-  demoText: { color:"white", fontSize:24, fontWeight:"bold", marginTop:12 },
-  demoSmall: { color:"#bbb", marginTop:6 },
-  videoInfo: { padding:14 },
-  username: { color:"#ff526c", fontSize:17, fontWeight:"bold" },
-  caption: { color:"white", fontSize:15, marginTop:8 },
-  actions: { flexDirection:"row", justifyContent:"space-between", marginTop:15 },
-  action: { color:"white", fontSize:15 },
-  nav: {
-    flexDirection:"row", backgroundColor:"#191919",
-    justifyContent:"space-around", paddingVertical:9,
-    borderTopWidth:1, borderTopColor:"#333"
+  language: {
+    color: "white",
+    fontSize: 15
   },
-  navItem: { alignItems:"center", flex:1 },
-  navText: { color:"#aaa", fontSize:10, marginTop:3 },
-  activeText: { color:"#ff3155", fontWeight:"bold" },
-  page: { flex:1, padding:12 },
+  main: {
+    flex: 1
+  },
+  content: {
+    flex: 1,
+    padding: 16
+  },
+  heading: {
+    color: "white",
+    fontSize: 23,
+    fontWeight: "bold",
+    marginBottom: 18
+  },
+  info: {
+    color: "#aaa",
+    fontSize: 14,
+    marginVertical: 12
+  },
   input: {
-    backgroundColor:"#292929", color:"white", padding:15,
-    borderRadius:10, marginVertical:10, fontSize:16
+    backgroundColor: "#292929",
+    color: "white",
+    padding: 15,
+    borderRadius: 10,
+    marginBottom: 15,
+    fontSize: 15
   },
-  primary: {
-    backgroundColor:"#ff3155", padding:16,
-    borderRadius:10, alignItems:"center", marginVertical:12
+  primaryButton: {
+    backgroundColor: "#ff3155",
+    padding: 15,
+    borderRadius: 10,
+    alignItems: "center",
+    marginVertical: 9
   },
-  primaryText: { color:"white", fontSize:16, fontWeight:"bold" },
-  info: { color:"#bbb", fontSize:15, margin:10, lineHeight:23 },
-  avatar: { fontSize:65, textAlign:"center", marginTop:20 },
-  stats: { flexDirection:"row", justifyContent:"space-around", margin:25 },
-  stat: { color:"white", textAlign:"center", fontSize:16, lineHeight:28 },
-  earning: { color:"#39dc8b", fontSize:30, fontWeight:"bold", margin:15 }
+  buttonText: {
+    color: "white",
+    fontSize: 16,
+    fontWeight: "bold"
+  },
+  videoCard: {
+    backgroundColor: "#202020",
+    borderRadius: 12,
+    overflow: "hidden",
+    marginBottom: 20
+  },
+  videoPlaceholder: {
+    height: 310,
+    backgroundColor: "#292929",
+    justifyContent: "center",
+    alignItems: "center"
+  },
+  playIcon: {
+    color: "#ff3155",
+    fontSize: 45
+  },
+  videoLabel: {
+    color: "white",
+    fontWeight: "bold",
+    fontSize: 19,
+    marginTop: 10
+  },
+  videoNote: {
+    color: "#aaa",
+    fontSize: 11,
+    marginTop: 8
+  },
+  videoDetails: {
+    padding: 15
+  },
+  username: {
+    color: "#ff3155",
+    fontWeight: "bold",
+    marginBottom: 8
+  },
+  caption: {
+    color: "white",
+    fontSize: 16
+  },
+  actions: {
+    flexDirection: "row",
+    gap: 28,
+    marginTop: 15
+  },
+  actionText: {
+    color: "white",
+    fontSize: 17
+  },
+  navigation: {
+    height: 65,
+    backgroundColor: "#191919",
+    flexDirection: "row",
+    justifyContent: "space-around",
+    alignItems: "center"
+  },
+  navItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    flex: 1
+  },
+  navIcon: {
+    fontSize: 21
+  },
+  navText: {
+    color: "#aaa",
+    fontSize: 11,
+    marginTop: 3
+  },
+  activeNav: {
+    color: "#ff3155",
+    fontWeight: "bold"
+  },
+  avatar: {
+    fontSize: 65,
+    textAlign: "center",
+    marginVertical: 15
+  },
+  profileStat: {
+    color: "white",
+    fontSize: 18,
+    marginVertical: 15
+  },
+  earning: {
+    color: "#20d68b",
+    fontSize: 25,
+    fontWeight: "bold"
+  },
+  comment: {
+    color: "white",
+    backgroundColor: "#292929",
+    padding: 12,
+    borderRadius: 8,
+    marginBottom: 8
+  },
+  backText: {
+    color: "#ff3155",
+    fontSize: 16,
+    marginVertical: 15
+  }
 });
