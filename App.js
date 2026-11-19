@@ -111,7 +111,7 @@ export default function App() {
     try {
       const cleanEmail = email.trim().toLowerCase();
       const result = mode === "signup"
-        ? await supabase.auth.signUp({ email: cleanEmail, password })
+        ? await supabase.auth.signUp({ email: cleanEmail, password, options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined } })
         : await supabase.auth.signInWithPassword({ email: cleanEmail, password });
       if (result.error) {
         setAuthMessage(result.error.message);
