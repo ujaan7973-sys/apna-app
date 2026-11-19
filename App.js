@@ -27,6 +27,7 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phoneOtp, setPhoneOtp] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [authMode, setAuthMode] = useState("login");
@@ -103,21 +104,40 @@ export default function App() {
 
   const authAction = async (mode = authMode) => {
     setAuthMessage("");
-    if (!email.trim() || password.length < 6) {
-      setAuthMessage("Email likhein aur password kam az kam 6 characters ka rakhein.");
+    const identifier = email.trim();
+    const isPhone = !identifier.includes("@");
+    if (!identifier || password.length < 6) {
+      setAuthMessage("Email ya mobile number aur kam az kam 6 characters ka password likhein.");
       return;
+    }
+    let phone = identifier.replace(/[\\s()-]/g, "");
+    if (isPhone) {
+      if (/^03\\d{9}$/.test(phone)) phone = "+92" + phone.slice(1);
+      else if (/^92\\d{10}$/.test(phone)) phone = "+" + phone;
+      if (!/^\\+[1-9]\\d{7,14}$/.test(phone)) {
+        setAuthMessage("Mobile number country code ke sath likhein, misal: +923001234567.");
+        return;
+      }
     }
     setLoading(true);
     try {
-      const cleanEmail = email.trim().toLowerCase();
+      const cleanEmail = identifier.toLowerCase();
       const result = mode === "signup"
-        ? await supabase.auth.signUp({ email: cleanEmail, password, options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined } })
-        : await supabase.auth.signInWithPassword({ email: cleanEmail, password });
+        ? (isPhone
+          ? await supabase.auth.signUp({ phone, password })
+          : await supabase.auth.signUp({ email: cleanEmail, password, options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined } }))
+        : (isPhone
+          ? await supabase.auth.signInWithPassword({ phone, password })
+          : await supabase.auth.signInWithPassword({ email: cleanEmail, password }));
       if (result.error) {
         setAuthMessage(result.error.message);
         return;
       }
-      if (mode === "signup" && !result.data.session) {
+      if (mode === "signup" && isPhone && !result.data.session) {
+        setEmail(phone);
+        setAuthMode("verifyPhone");
+        setAuthMessage("SMS verification code bhej diya gaya hai. Code neeche likhein.");
+      } else if (mode === "signup" && !result.data.session) {
         setAuthMessage("Account request ho gayi. Email inbox mein confirmation link check karein, verify karke Login dabayein.");
       } else {
         setAuthMessage("Login successful! APNA mein khush aamdeed.");
@@ -129,6 +149,36 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const verifyPhoneSignup = async () => {
+    const phone = email.trim();
+    if (!/^\\d{6}$/.test(phoneOtp.trim())) { setAuthMessage("6 digit SMS code likhein."); return; }
+    setLoading(true);
+    try {
+      const { data, error } = await supabase.auth.verifyOtp({ phone, token: phoneOtp.trim(), type: "sms" });
+      if (error) throw error;
+      setSession(data.session);
+      setAuthMode("login");
+      setPhoneOtp("");
+      setAuthMessage("Mobile verify ho gaya. APNA mein khush aamdeed!");
+      setTab("Home");
+    } catch (e) {
+      setAuthMessage(e?.message || "OTP verify nahi hua. Dobara koshish karein.");
+    } finally { setLoading(false); }
+  };
+
+  const socialLogin = async provider => {
+    if (typeof window === "undefined") {
+      setAuthMessage("Social login abhi web version par available hai.");
+      return;
+    }
+    setLoading(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider,
+      options: { redirectTo: window.location.origin }
+    });
+    if (error) { setAuthMessage(error.message); setLoading(false); }
   };
 
   const sendPasswordReset = async () => {
@@ -296,13 +346,18 @@ export default function App() {
         <TouchableOpacity style={styles.primaryButton} onPress={async () => { await supabase.auth.signOut(); setVideos([]); setTab("Profile"); }}><Text style={styles.buttonText}>Logout</Text></TouchableOpacity>
       </> : <>
         <Text style={styles.avatar}>👑</Text>
-        {authMode === "updatePassword" ? <>
+        {authMode === "verifyPhone" ? <>
+          <Text style={styles.info}>SMS code {email} par bheja gaya hai.</Text>
+          <TextInput style={styles.input} placeholder="6 digit SMS code" placeholderTextColor="#999" keyboardType="number-pad" value={phoneOtp} onChangeText={setPhoneOtp} />
+          <TouchableOpacity style={styles.primaryButton} onPress={verifyPhoneSignup} disabled={loading}><Text style={styles.buttonText}>{loading ? "Verifying..." : "Verify Mobile Number"}</Text></TouchableOpacity>
+          <TouchableOpacity onPress={() => { setAuthMode("login"); setPhoneOtp(""); setAuthMessage(""); }}><Text style={styles.switchText}>← Back to Login</Text></TouchableOpacity>
+        </> : authMode === "updatePassword" ? <>
           <Text style={styles.info}>Apna naya password do martaba likhein.</Text>
           <TextInput style={styles.input} placeholder="New password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
           <TextInput style={styles.input} placeholder="Confirm new password" placeholderTextColor="#999" secureTextEntry value={confirmNewPassword} onChangeText={setConfirmNewPassword} />
           <TouchableOpacity style={styles.primaryButton} onPress={saveNewPassword} disabled={loading}><Text style={styles.buttonText}>{loading ? "Saving..." : "Save New Password"}</Text></TouchableOpacity>
         </> : <>
-          <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+          <TextInput style={styles.input} placeholder="Email ya mobile (+923001234567)" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
           {authMode !== "forgot" && <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />}
           {authMode === "forgot" ? <>
             <TouchableOpacity style={styles.primaryButton} onPress={sendPasswordReset} disabled={loading}><Text style={styles.buttonText}>{loading ? "Sending..." : "Send Reset Link"}</Text></TouchableOpacity>
@@ -310,6 +365,10 @@ export default function App() {
           </> : <>
             <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
             <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044",opacity:loading?0.65:1}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Account ban raha hai..." : "Create New Account"}</Text></TouchableOpacity>
+            {typeof window !== "undefined" && <>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => socialLogin("google")} disabled={loading}><Text style={styles.buttonText}>Continue with Google</Text></TouchableOpacity>
+              <TouchableOpacity style={styles.secondaryButton} onPress={() => socialLogin("facebook")} disabled={loading}><Text style={styles.buttonText}>Continue with Facebook</Text></TouchableOpacity>
+            </>}
             <TouchableOpacity onPress={() => { setAuthMode("forgot"); setAuthMessage(""); }}><Text style={styles.switchText}>Forgot Password?</Text></TouchableOpacity>
           </>}
         </>}
