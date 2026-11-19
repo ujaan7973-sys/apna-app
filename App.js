@@ -67,7 +67,7 @@ export default function App() {
 
   useEffect(() => { if (session) loadVideos(); }, [session?.user?.id]);
 
-  const authAction = async () => {
+  const authAction = async (mode = authMode) => {
     setAuthMessage("");
     if (!email.trim() || password.length < 6) {
       setAuthMessage("Email likhein aur password kam az kam 6 characters ka rakhein.");
@@ -75,14 +75,15 @@ export default function App() {
     }
     setLoading(true);
     try {
-      const result = authMode === "signup"
-        ? await supabase.auth.signUp({ email: email.trim(), password })
-        : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const cleanEmail = email.trim().toLowerCase();
+      const result = mode === "signup"
+        ? await supabase.auth.signUp({ email: cleanEmail, password })
+        : await supabase.auth.signInWithPassword({ email: cleanEmail, password });
       if (result.error) {
         setAuthMessage(result.error.message);
         return;
       }
-      if (authMode === "signup" && !result.data.session) {
+      if (mode === "signup" && !result.data.session) {
         setAuthMessage("Account request ho gayi. Email inbox mein confirmation link check karein, verify karke Login dabayein.");
       } else {
         setAuthMessage("Login successful! APNA mein khush aamdeed.");
@@ -196,9 +197,9 @@ export default function App() {
       </> : <>
         <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
         <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />
-        <TouchableOpacity style={styles.primaryButton} onPress={authAction} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : authMode === "login" ? "Login" : "Create Account"}</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044"}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>Create New Account</Text></TouchableOpacity>
         {authMessage ? <Text style={styles.info}>{authMessage}</Text> : null}
-        <TouchableOpacity onPress={() => setAuthMode(authMode === "login" ? "signup" : "login")}><Text style={styles.switchText}>{authMode === "login" ? "New user? Create account" : "Already registered? Login"}</Text></TouchableOpacity>
       </>}
       <Text style={styles.smallInfo}>APNA public video community</Text>
     </ScrollView>;
