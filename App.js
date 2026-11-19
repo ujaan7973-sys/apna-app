@@ -293,7 +293,7 @@ export default function App() {
         ctx.lineWidth=Math.max(3,fontSize*0.12);ctx.strokeStyle="rgba(0,0,0,0.85)";
         ctx.fillStyle="#ffffff";
         const maxWidth=canvas.width*0.9;
-        const words=caption.trim().split(/\\s+/);let lines=[],line="";
+        const words=caption.trim().split(/\s+/);let lines=[],line="";
         for(const word of words){const test=line?line+" "+word:word;if(ctx.measureText(test).width>maxWidth&&line){lines.push(line);line=word;}else line=test;}
         if(line)lines.push(line);
         const lineHeight=fontSize*1.2;const startY=canvas.height-24-(lines.length-1)*lineHeight;
