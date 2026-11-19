@@ -44,10 +44,28 @@ export default function App() {
   const [avatarUrl, setAvatarUrl] = useState("");
 
   useEffect(() => {
-    supabase.auth.getSession().then(({ data }) => setSession(data.session));
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => setSession(next));
+    let mounted = true;
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return;
+      if (error) {
+        setAuthMessage(error.message);
+        return;
+      }
+      setSession(data.session);
+      if (data.session) setTab("Home");
+    });
+    const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
+      if (!mounted) return;
+      setSession(next);
+      if (next && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION")) {
+        setTab("Home");
+      }
+    });
     loadVideos();
-    return () => listener.subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   const loadVideos = async () => {
