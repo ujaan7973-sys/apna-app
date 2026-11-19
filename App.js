@@ -198,7 +198,7 @@ export default function App() {
         <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
         <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />
         <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
-        <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044"}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>Create New Account</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044",opacity:loading?0.65:1}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Account ban raha hai..." : "Create New Account"}</Text></TouchableOpacity>
         {authMessage ? <Text style={styles.info}>{authMessage}</Text> : null}
       </>}
       <Text style={styles.smallInfo}>APNA public video community</Text>
