@@ -1,11 +1,11 @@
 import "react-native-url-polyfill/auto";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, StatusBar, ActivityIndicator, Image
+  StyleSheet, Alert, StatusBar, ActivityIndicator, Image, Platform
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
-import { useVideoPlayer, VideoView } from "expo-video";
+import { VideoView, useVideoPlayer } from "expo-video";
 import { createClient } from "@supabase/supabase-js";
 
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
@@ -14,332 +14,197 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: typeof localStorage !== "undefined" ? localStorage : undefined }
 });
 
-function FeedVideo({ uri }) {
-  const player = useVideoPlayer(uri, p => { p.loop = true; });
-  return <VideoView player={player} style={styles.videoPlayer} nativeControls contentFit="contain" />;
+const COLORS = { bg:"#090B16", panel:"#15182A", panel2:"#20243A", text:"#F7F7FF", muted:"#9BA2BD", cyan:"#21D4FD", pink:"#B721FF", purple:"#6C4BFF", line:"#2A2F49" };
+
+function PrimaryButton({ title, onPress, disabled=false }) {
+  return <TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.primaryButton, disabled && {opacity:.5}]}><Text style={styles.primaryText}>{title}</Text></TouchableOpacity>;
 }
-function Preview({ uri }) {
+function VideoPreview({ uri }) {
   const player = useVideoPlayer(uri, p => { p.loop = true; });
-  return <VideoView player={player} style={styles.previewPlayer} nativeControls contentFit="contain" />;
+  return <VideoView player={player} style={styles.preview} nativeControls contentFit="contain" />;
 }
 
 export default function App() {
-  const [session, setSession] = useState(null);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [newPassword, setNewPassword] = useState("");
-  const [confirmNewPassword, setConfirmNewPassword] = useState("");
-  const [authMode, setAuthMode] = useState("login");
-  const [tab, setTab] = useState("Home");
-  const [videos, setVideos] = useState([]);
-  const [liked, setLiked] = useState([]);
-  const [caption, setCaption] = useState("");
-  const [selectedVideo, setSelectedVideo] = useState(null);
-  const [search, setSearch] = useState("");
-  const [comments, setComments] = useState({});
-  const [commentText, setCommentText] = useState("");
-  const [commentVideo, setCommentVideo] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [authMessage, setAuthMessage] = useState("");
-  const [profileName, setProfileName] = useState("");
-  const [profileBio, setProfileBio] = useState("");
-  const [avatarUrl, setAvatarUrl] = useState("");
+  const [session,setSession]=useState(null);
+  const [authMode,setAuthMode]=useState("login");
+  const [email,setEmail]=useState("");
+  const [password,setPassword]=useState("");
+  const [authBusy,setAuthBusy]=useState(false);
+  const [authMessage,setAuthMessage]=useState("");
+  const [screen,setScreen]=useState("Home");
+  const [asset,setAsset]=useState(null);
+  const [mediaKind,setMediaKind]=useState("image");
+  const [title,setTitle]=useState("My first edit");
+  const [caption,setCaption]=useState("");
+  const [activeTool,setActiveTool]=useState("Filters");
+  const [filter,setFilter]=useState("Original");
+  const [ratio,setRatio]=useState("Original");
+  const [volume,setVolume]=useState(100);
+  const [projects,setProjects]=useState([]);
+  const [busy,setBusy]=useState(false);
+  const [tab,setTab]=useState("Home");
 
-  useEffect(() => {
-    let mounted = true;
-    supabase.auth.getSession().then(({ data, error }) => {
-      if (!mounted) return;
-      if (error) {
-        setAuthMessage(error.message);
-        return;
-      }
-      setSession(data.session);
-      if (data.session) setTab("Home");
-    });
-    const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
-      if (!mounted) return;
-      setSession(next);
-      if (event === "PASSWORD_RECOVERY") {
-        setAuthMode("updatePassword");
-        setAuthMessage("Naya password set karein.");
-      }
-      if (next && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION")) {
-        setTab("Home");
-      }
-    });
-    loadVideos();
-    return () => {
-      mounted = false;
-      listener.subscription.unsubscribe();
-    };
-  }, []);
+  useEffect(()=>{
+    let alive=true;
+    supabase.auth.getSession().then(({data})=>{if(alive)setSession(data.session);});
+    const {data:sub}=supabase.auth.onAuthStateChange((_event,next)=>{if(alive)setSession(next);});
+    return ()=>{alive=false;sub.subscription.unsubscribe();};
+  },[]);
 
-  const loadVideos = async () => {
-    const { data, error } = await supabase.from("videos").select("*").order("created_at", { ascending: false });
-    if (error) { console.log("APNA feed:", error.message); return; }
-    setVideos(data || []);
-    if (data?.length) {
-      const ids = data.map(v => v.id);
-      const [{ data: likeRows }, { data: commentRows }] = await Promise.all([
-        supabase.from("video_likes").select("video_id,user_id").in("video_id", ids),
-        supabase.from("video_comments").select("id,video_id,user_id,username,comment,created_at").in("video_id", ids).order("created_at")
-      ]);
-      setLiked((likeRows || []).filter(x => x.user_id === (session?.user?.id)).map(x => x.video_id));
-      const grouped = {};
-      (commentRows || []).forEach(c => { grouped[c.video_id] = [...(grouped[c.video_id] || []), c]; });
-      setComments(grouped);
-      setVideos((data || []).map(v => ({ ...v, likes: (likeRows || []).filter(x => x.video_id === v.id).length })));
-    }
+  useEffect(()=>{ if(session) loadProjects(); else setProjects([]); },[session?.user?.id]);
+
+  const loadProjects=async()=>{
+    const {data,error}=await supabase.from("clipora_projects").select("*").order("created_at",{ascending:false}).limit(30);
+    if(!error)setProjects(data||[]);
   };
 
-  useEffect(() => {
-    if (session) {
-      loadVideos();
-      setProfileName(session.user.user_metadata?.display_name || session.user.email?.split("@")[0] || "APNA User");
-      setProfileBio(session.user.user_metadata?.bio || "");
-      setAvatarUrl(session.user.user_metadata?.avatar_url || "");
-    }
-  }, [session?.user?.id]);
-
-  const authAction = async (mode = authMode) => {
+  const signIn=async()=>{
     setAuthMessage("");
-    if (!email.trim() || password.length < 6) {
-      setAuthMessage("Email likhein aur password kam az kam 6 characters ka rakhein.");
-      return;
-    }
-    setLoading(true);
-    try {
-      const cleanEmail = email.trim().toLowerCase();
-      const result = mode === "signup"
-        ? await supabase.auth.signUp({ email: cleanEmail, password, options: { emailRedirectTo: typeof window !== "undefined" ? window.location.origin : undefined } })
-        : await supabase.auth.signInWithPassword({ email: cleanEmail, password });
-      if (result.error) {
-        setAuthMessage(result.error.message);
-        return;
-      }
-      if (mode === "signup" && !result.data.session) {
-        setAuthMessage("Account request ho gayi. Email inbox mein confirmation link check karein, verify karke Login dabayein.");
-      } else {
-        setAuthMessage("Login successful! APNA mein khush aamdeed.");
-        setSession(result.data.session);
-        if (result.data.session) setTab("Home");
-      }
-    } catch (e) {
-      setAuthMessage(e?.message || "Connection error. Internet check karke dobara koshish karein.");
-    } finally {
-      setLoading(false);
-    }
+    if(!email.trim()||password.length<6){setAuthMessage("Email aur kam az kam 6 characters ka password likhein.");return;}
+    setAuthBusy(true);
+    try{
+      const clean=email.trim().toLowerCase();
+      const result=authMode==="signup"
+        ? await supabase.auth.signUp({email:clean,password,options:{emailRedirectTo:typeof window!=="undefined"?window.location.origin:undefined}})
+        : await supabase.auth.signInWithPassword({email:clean,password});
+      if(result.error) setAuthMessage(result.error.message);
+      else if(authMode==="signup"&&!result.data.session) setAuthMessage("Account request ho gayi. Email verify karke login karein.");
+      else {setSession(result.data.session);setAuthMessage("Login successful.");}
+    }catch(e){setAuthMessage(e?.message||"Connection error.");}
+    finally{setAuthBusy(false);}
   };
 
-  const sendPasswordReset = async () => {
-    setAuthMessage("");
-    const cleanEmail = email.trim().toLowerCase();
-    if (!cleanEmail) { setAuthMessage("Pehle apna email address likhein."); return; }
-    setLoading(true);
-    try {
-      const redirectOptions = typeof window !== "undefined" ? { redirectTo: window.location.origin } : undefined;
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, redirectOptions);
-      if (error) setAuthMessage(error.message);
-      else setAuthMessage("Agar is email par account hai to password reset link bhej diya gaya hai. Inbox aur Spam folder check karein.");
-    } catch (e) {
-      setAuthMessage(e?.message || "Reset email nahi bheji ja saki. Dobara koshish karein.");
-    } finally { setLoading(false); }
-  };
-
-  const saveNewPassword = async () => {
-    setAuthMessage("");
-    if (newPassword.length < 6) { setAuthMessage("Naya password kam az kam 6 characters ka hona chahiye."); return; }
-    if (newPassword !== confirmNewPassword) { setAuthMessage("Dono passwords match nahi karte."); return; }
-    setLoading(true);
-    try {
-      const { error } = await supabase.auth.updateUser({ password: newPassword });
-      if (error) setAuthMessage(error.message);
-      else {
-        setPassword(""); setNewPassword(""); setConfirmNewPassword("");
-        setAuthMode("login");
-        setAuthMessage("Password update ho gaya. Ab naye password se login karein.");
-        await supabase.auth.signOut();
-      }
-    } catch (e) {
-      setAuthMessage(e?.message || "Password update nahi ho saka. Reset link dobara mangwayein.");
-    } finally { setLoading(false); }
-  };
-
-  const chooseVideo = async () => {
-    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permission.granted) { Alert.alert("Permission", "Gallery permission allow karein."); return; }
-    const result = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["videos"], quality: 1 });
-    if (!result.canceled && result.assets?.length) setSelectedVideo(result.assets[0]);
-  };
-
-  const publishVideo = async () => {
-    if (!session) { Alert.alert("Login required", "Video upload karne ke liye pehle login karein."); setTab("Profile"); return; }
-    if (!selectedVideo?.uri || !caption.trim()) { Alert.alert("APNA", "Video select karein aur caption likhein."); return; }
-    setLoading(true);
-    try {
-      const asset = selectedVideo;
-      const ext = (asset.fileName || asset.uri.split("?")[0]).split(".").pop() || "mp4";
-      const path = session.user.id + "/" + Date.now() + "." + ext;
-      const response = await fetch(asset.uri);
-      const body = await response.arrayBuffer();
-      const contentType = asset.mimeType || "video/mp4";
-      const { error: uploadError } = await supabase.storage.from("apna-videos").upload(path, body, { contentType, upsert: false });
-      if (uploadError) throw uploadError;
-      const { data: publicData } = supabase.storage.from("apna-videos").getPublicUrl(path);
-      const { error: rowError } = await supabase.from("videos").insert({
-        user_id: session.user.id,
-        username: session.user.email?.split("@")[0] || "APNA Creator",
-        caption: caption.trim(),
-        video_path: path,
-        video_url: publicData.publicUrl
+  const chooseMedia=async(kind)=>{
+    try{
+      const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if(!permission.granted){Alert.alert("Permission","Gallery access allow karein.");return;}
+      const result=await ImagePicker.launchImageLibraryAsync({
+        mediaTypes:kind==="image"?["images"]:["videos"],
+        allowsEditing:kind==="image",
+        quality:1,
+        videoMaxDuration:180
       });
-      if (rowError) throw rowError;
-      setSelectedVideo(null); setCaption(""); setTab("Home");
-      await loadVideos();
-      Alert.alert("APNA", "Video public feed mein upload ho gayi!");
-    } catch (e) {
-      Alert.alert("Upload failed", e.message || "Video upload nahi ho saki. Supabase SQL setup aur login check karein.");
-    } finally { setLoading(false); }
+      if(!result.canceled&&result.assets?.length){
+        setAsset(result.assets[0]);setMediaKind(kind);setScreen("Editor");setActiveTool("Filters");
+        setTitle(kind==="image"?"My photo edit":"My video edit");
+      }
+    }catch(e){Alert.alert("Gallery error",e?.message||"Media open nahi ho saka.");}
   };
 
-  const toggleLike = async id => {
-    if (!session) { Alert.alert("Login required", "Like karne ke liye login karein."); return; }
-    const already = liked.includes(id);
-    const result = already
-      ? await supabase.from("video_likes").delete().eq("video_id", id).eq("user_id", session.user.id)
-      : await supabase.from("video_likes").insert({ video_id: id, user_id: session.user.id });
-    if (result.error) Alert.alert("Like error", result.error.message);
-    else { setLiked(old => already ? old.filter(x => x !== id) : [...old, id]); setVideos(old => old.map(v => v.id === id ? { ...v, likes: Math.max(0, (v.likes || 0) + (already ? -1 : 1)) } : v)); }
+  const saveProject=async()=>{
+    if(!session){Alert.alert("Login required","Project save karne ke liye login karein.");setScreen("Profile");return;}
+    if(!asset?.uri){Alert.alert("Media select karein","Pehle photo ya video choose karein.");return;}
+    setBusy(true);
+    try{
+      const ext=(asset.fileName||asset.uri.split("?")[0]).split(".").pop()||(mediaKind==="image"?"jpg":"mp4");
+      const path=session.user.id+"/"+Date.now()+"."+ext;
+      const response=await fetch(asset.uri);
+      const body=await response.arrayBuffer();
+      const contentType=asset.mimeType||(mediaKind==="image"?"image/jpeg":"video/mp4");
+      const {error:uploadError}=await supabase.storage.from("clipora-media").upload(path,body,{contentType,upsert:false});
+      if(uploadError)throw uploadError;
+      const {data:publicData}=supabase.storage.from("clipora-media").getPublicUrl(path);
+      const settings={filter,ratio,volume,caption,editorVersion:1};
+      const {error:rowError}=await supabase.from("clipora_projects").insert({
+        user_id:session.user.id,title:title.trim()||"Untitled project",
+        media_type:mediaKind,media_path:path,media_url:publicData.publicUrl,settings
+      });
+      if(rowError)throw rowError;
+      await loadProjects();setScreen("Projects");
+      Alert.alert("Saved","Project Clipora cloud mein save ho gaya.");
+    }catch(e){Alert.alert("Save failed",e?.message||"Project save nahi ho saka.");}
+    finally{setBusy(false);}
   };
 
-  const openComments = id => { setCommentVideo(id); setTab("Comments"); };
-  const addComment = async () => {
-    if (!session) { Alert.alert("Login required", "Comment ke liye login karein."); return; }
-    if (!commentText.trim()) return;
-    const { error } = await supabase.from("video_comments").insert({
-      video_id: commentVideo, user_id: session.user.id,
-      username: session.user.email?.split("@")[0] || "APNA User", comment: commentText.trim()
-    });
-    if (error) Alert.alert("Comment error", error.message);
-    else { setCommentText(""); await loadVideos(); }
+  const deleteProject=async(item)=>{
+    Alert.alert("Delete project?","Yeh project list se delete ho jayega.",[
+      {text:"Cancel",style:"cancel"},
+      {text:"Delete",style:"destructive",onPress:async()=>{
+        const {error}=await supabase.from("clipora_projects").delete().eq("id",item.id);
+        if(error)Alert.alert("Error",error.message);else loadProjects();
+      }}
+    ]);
   };
 
-  const VideoCard = ({ item }) => (
-    <View style={styles.videoCard}>
-      <FeedVideo uri={item.video_url} />
-      <View style={styles.videoDetails}>
-        <Text style={styles.username}>@{item.username}</Text>
-        <Text style={styles.caption}>{item.caption}</Text>
-        <View style={styles.actions}>
-          <TouchableOpacity onPress={() => toggleLike(item.id)}><Text style={styles.actionText}>{liked.includes(item.id) ? "❤️" : "🤍"} {item.likes || 0}</Text></TouchableOpacity>
-          <TouchableOpacity onPress={() => openComments(item.id)}><Text style={styles.actionText}>💬 {(comments[item.id] || []).length}</Text></TouchableOpacity>
+  const tools=["Filters","Crop","Text","Music","Adjust"];
+  const filters=["Original","Warm","Cool","Mono","Dream"];
+  const goHome=()=>{setScreen("Home");setAsset(null);};
+
+  if(!session){
+    return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
+      <View style={styles.authWrap}>
+        <View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View>
+        <Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text>
+        <Text style={styles.tagline}>Create. Edit. Shine.</Text>
+        <View style={styles.panel}>
+          <Text style={styles.heading}>{authMode==="login"?"Welcome back":"Create your account"}</Text>
+          <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email address" placeholderTextColor={COLORS.muted} style={styles.input}/>
+          <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password (6+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/>
+          {!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}
+          <PrimaryButton title={authBusy?"Please wait...":authMode==="login"?"Log in":"Create account"} onPress={signIn} disabled={authBusy}/>
+          <TouchableOpacity onPress={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}><Text style={styles.switchText}>{authMode==="login"?"New to Clipora? Create account":"Already registered? Log in"}</Text></TouchableOpacity>
         </View>
+        <Text style={styles.smallNote}>Your creative workspace, in your pocket.</Text>
       </View>
+    </SafeAreaView>;
+  }
+
+  return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
+    <View style={styles.topbar}>
+      <TouchableOpacity onPress={goHome} style={styles.brandRow}><View style={styles.miniLogo}><Text style={styles.miniLogoText}>C</Text></View><Text style={styles.topBrand}>Clipora <Text style={styles.brandAI}>AI</Text></Text></TouchableOpacity>
+      <TouchableOpacity onPress={()=>setScreen("Profile")}><Text style={styles.avatar}>{(session.user.email||"C").slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
-  );
 
-  const renderContent = () => {
-    if (tab === "Home" || tab === "Search") {
-      const list = tab === "Search" ? videos.filter(v => (v.caption || "").toLowerCase().includes(search.toLowerCase())) : videos;
-      return <ScrollView style={styles.content}>
-        <Text style={styles.heading}>{tab === "Home" ? "APNA • Public Videos" : "Search APNA"}</Text>
-        {tab === "Search" && <TextInput style={styles.input} placeholder="Search videos..." placeholderTextColor="#999" value={search} onChangeText={setSearch} />}
-        {list.length === 0 && <Text style={styles.info}>Abhi public videos nahi hain. Pehli video upload karein!</Text>}
-        {list.map(v => <VideoCard key={v.id} item={v} />)}
-        <TouchableOpacity onPress={loadVideos} style={styles.secondaryButton}><Text style={styles.buttonText}>↻ Refresh Feed</Text></TouchableOpacity>
-      </ScrollView>;
-    }
-    if (tab === "Upload") return <ScrollView style={styles.content}>
-      <Text style={styles.heading}>Public Video Upload</Text>
-      {!session && <Text style={styles.info}>Upload se pehle Profile mein account banayein ya login karein.</Text>}
-      <TextInput style={styles.input} placeholder="Video caption..." placeholderTextColor="#999" value={caption} onChangeText={setCaption} />
-      <TouchableOpacity style={styles.primaryButton} onPress={chooseVideo}><Text style={styles.buttonText}>📁 Gallery se video chunein</Text></TouchableOpacity>
-      {selectedVideo?.uri && <View style={styles.selectedBox}><Preview uri={selectedVideo.uri} /><Text style={styles.smallInfo}>{selectedVideo.fileName || "Video selected"}</Text></View>}
-      <TouchableOpacity style={styles.primaryButton} onPress={publishVideo} disabled={loading}><Text style={styles.buttonText}>{loading ? "Uploading..." : "🌍 Publish Public Video"}</Text></TouchableOpacity>
-      <Text style={styles.smallInfo}>Public videos APNA ke sab users ko nazar aayengi.</Text>
-    </ScrollView>;
-    if (tab === "Profile") return <ScrollView style={styles.content}>
-      <Text style={styles.heading}>My APNA Profile</Text>
-      {session ? <>
-        {avatarUrl ? <Image source={{uri:avatarUrl}} style={styles.profilePhoto} /> : <Text style={styles.avatar}>👤</Text>}
-        <Text style={styles.info}>{session.user.email}</Text>
-        <TextInput style={styles.input} placeholder="Apna naam likhein" placeholderTextColor="#999" value={profileName} onChangeText={setProfileName} />
-        <TextInput style={[styles.input,{minHeight:90}]} placeholder="Apni bio likhein..." placeholderTextColor="#999" multiline value={profileBio} onChangeText={setProfileBio} />
-        <TouchableOpacity style={styles.primaryButton} onPress={async () => {
-          setLoading(true);
-          const {error} = await supabase.auth.updateUser({data:{display_name:profileName.trim(),bio:profileBio.trim()}});
-          setLoading(false);
-          Alert.alert("APNA", error ? error.message : "Profile save ho gayi!");
-        }} disabled={loading}><Text style={styles.buttonText}>{loading ? "Saving..." : "Save Profile"}</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.secondaryButton} onPress={async () => {
-          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
-          if (!p.granted) { Alert.alert("Permission","Gallery permission allow karein."); return; }
-          const pick = await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],allowsEditing:true,aspect:[1,1],quality:0.8});
-          if (pick.canceled || !pick.assets?.length) return;
-          setLoading(true);
-          try {
-            const a = pick.assets[0];
-            const ext = (a.fileName || a.uri.split("?")[0]).split(".").pop() || "jpg";
-            const path = session.user.id + "/avatar-" + Date.now() + "." + ext;
-            const response = await fetch(a.uri);
-            const body = await response.arrayBuffer();
-            const {error:upErr} = await supabase.storage.from("apna-videos").upload(path,body,{contentType:a.mimeType || "image/jpeg",upsert:true});
-            if (upErr) throw upErr;
-            const url = supabase.storage.from("apna-videos").getPublicUrl(path).data.publicUrl;
-            const {error:metaErr} = await supabase.auth.updateUser({data:{avatar_url:url}});
-            if (metaErr) throw metaErr;
-            setAvatarUrl(url);
-            Alert.alert("APNA","Profile picture update ho gayi!");
-          } catch(e) { Alert.alert("Upload error",e.message || "Picture upload nahi hui."); }
-          finally { setLoading(false); }
-        }}><Text style={styles.buttonText}>📷 Change Profile Picture</Text></TouchableOpacity>
-        <TouchableOpacity style={styles.primaryButton} onPress={async () => { await supabase.auth.signOut(); setVideos([]); setTab("Profile"); }}><Text style={styles.buttonText}>Logout</Text></TouchableOpacity>
-      </> : <>
-        <Text style={styles.avatar}>👑</Text>
-        {authMode === "updatePassword" ? <>
-          <Text style={styles.info}>Apna naya password do martaba likhein.</Text>
-          <TextInput style={styles.input} placeholder="New password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
-          <TextInput style={styles.input} placeholder="Confirm new password" placeholderTextColor="#999" secureTextEntry value={confirmNewPassword} onChangeText={setConfirmNewPassword} />
-          <TouchableOpacity style={styles.primaryButton} onPress={saveNewPassword} disabled={loading}><Text style={styles.buttonText}>{loading ? "Saving..." : "Save New Password"}</Text></TouchableOpacity>
-        </> : <>
-          <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
-          {authMode !== "forgot" && <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />}
-          {authMode === "forgot" ? <>
-            <TouchableOpacity style={styles.primaryButton} onPress={sendPasswordReset} disabled={loading}><Text style={styles.buttonText}>{loading ? "Sending..." : "Send Reset Link"}</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => { setAuthMode("login"); setAuthMessage(""); }}><Text style={styles.switchText}>← Back to Login</Text></TouchableOpacity>
-          </> : <>
-            <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
-            <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044",opacity:loading?0.65:1}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Account ban raha hai..." : "Create New Account"}</Text></TouchableOpacity>
-            <TouchableOpacity onPress={() => { setAuthMode("forgot"); setAuthMessage(""); }}><Text style={styles.switchText}>Forgot Password?</Text></TouchableOpacity>
-          </>}
-        </>}
-        {authMessage ? <Text style={styles.info}>{authMessage}</Text> : null}
-      </>}
-      <Text style={styles.smallInfo}>APNA public video community</Text>
-    </ScrollView>;
-    if (tab === "Inbox") return <View style={styles.content}><Text style={styles.heading}>Inbox</Text><Text style={styles.info}>Messages feature next update mein aayega.</Text></View>;
-    if (tab === "Comments") return <View style={styles.content}>
-      <Text style={styles.heading}>Comments</Text>
-      <ScrollView style={{ flex: 1 }}>{(comments[commentVideo] || []).map(c => <Text key={c.id} style={styles.comment}>@{c.username}: {c.comment}</Text>)}</ScrollView>
-      <TextInput style={styles.input} placeholder="Comment likhein..." placeholderTextColor="#999" value={commentText} onChangeText={setCommentText} />
-      <TouchableOpacity style={styles.primaryButton} onPress={addComment}><Text style={styles.buttonText}>Send Comment</Text></TouchableOpacity>
-      <TouchableOpacity onPress={() => setTab("Home")}><Text style={styles.switchText}>← Back to Home</Text></TouchableOpacity>
-    </View>;
-  };
+    {screen==="Home"&&<ScrollView contentContainerStyle={styles.page}>
+      <Text style={styles.eyebrow}>YOUR CREATIVE STUDIO</Text><Text style={styles.hero}>Make something{"\n"}<Text style={styles.heroAccent}>beautiful.</Text></Text>
+      <Text style={styles.sub}>Photo aur video editing ek hi jagah.</Text>
+      <View style={styles.createGrid}>
+        <TouchableOpacity style={[styles.createCard,styles.photoCard]} onPress={()=>chooseMedia("image")}><Text style={styles.cardIcon}>▧</Text><Text style={styles.cardTitle}>Photo Editor</Text><Text style={styles.cardSub}>Crop • Filters • Text</Text></TouchableOpacity>
+        <TouchableOpacity style={[styles.createCard,styles.videoCard]} onPress={()=>chooseMedia("video")}><Text style={styles.cardIcon}>▶</Text><Text style={styles.cardTitle}>Video Editor</Text><Text style={styles.cardSub}>Preview • Music • Text</Text></TouchableOpacity>
+      </View>
+      <Text style={styles.sectionTitle}>Quick tools</Text>
+      <View style={styles.quickGrid}>{["AI Studio","Templates","My Projects","Profile"].map((x,i)=><TouchableOpacity key={x} style={styles.quickItem} onPress={()=>setScreen(x==="My Projects"?"Projects":x==="Profile"?"Profile":"AI")}><Text style={styles.quickIcon}>{["✦","▦","▤","●"][i]}</Text><Text style={styles.quickLabel}>{x}</Text></TouchableOpacity>)}</View>
+      <View style={styles.tipBox}><Text style={styles.tipTitle}>✨ Clipora AI Studio</Text><Text style={styles.tipText}>AI effects, auto captions aur background tools aglay stages mein connect honge. Abhi photo/video import aur project saving ka base tayyar hai.</Text></View>
+    </ScrollView>}
 
-  return <SafeAreaView style={styles.container}>
-    <StatusBar barStyle="light-content" backgroundColor="#101018" />
-    <View style={styles.header}><Text style={styles.logo}>👑 APNA</Text><Text style={styles.tagline}>WATCH • CREATE • SHARE</Text></View>
-    <View style={styles.main}>{renderContent()}</View>
-    {tab !== "Comments" && <View style={styles.navigation}>
-      {["Home","Search","Upload","Inbox","Profile"].map(name => <TouchableOpacity key={name} style={styles.navItem} onPress={() => setTab(name)}>
-        <Text style={styles.navIcon}>{{Home:"🏠",Search:"🔍",Upload:"➕",Inbox:"💬",Profile:"👤"}[name]}</Text>
-        <Text style={[styles.navText, tab === name && styles.activeNav]}>{name}</Text>
-      </TouchableOpacity>)}
-    </View>}
+    {screen==="Editor"&&<ScrollView contentContainerStyle={styles.page}>
+      <View style={styles.rowBetween}><TouchableOpacity onPress={goHome}><Text style={styles.back}>‹ Back</Text></TouchableOpacity><Text style={styles.editorLabel}>{mediaKind==="image"?"PHOTO EDITOR":"VIDEO EDITOR"}</Text></View>
+      <TextInput value={title} onChangeText={setTitle} style={styles.titleInput} placeholder="Project name" placeholderTextColor={COLORS.muted}/>
+      <View style={styles.previewFrame}>
+        {asset?.uri&&(mediaKind==="image"?<Image source={{uri:asset.uri}} style={styles.preview} resizeMode="contain"/>:<VideoPreview uri={asset.uri}/>)}
+        {caption.trim().length>0&&<View style={styles.captionOverlay}><Text style={styles.captionOverlayText}>{caption}</Text></View>}
+        {!asset&&<Text style={styles.muted}>Select a photo or video to start</Text>}
+      </View>
+      <View style={styles.toolTabs}>{tools.map(t=><TouchableOpacity key={t} onPress={()=>setActiveTool(t)} style={[styles.toolTab,activeTool===t&&styles.toolTabActive]}><Text style={[styles.toolTabText,activeTool===t&&styles.toolTabTextActive]}>{t}</Text></TouchableOpacity>)}</View>
+      {activeTool==="Filters"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Choose a look</Text><View style={styles.chips}>{filters.map(f=><TouchableOpacity key={f} onPress={()=>setFilter(f)} style={[styles.chip,filter===f&&styles.chipOn]}><Text style={styles.chipText}>{f}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Filter selection project settings mein save hoti hai. Exported filter rendering next editing stage mein add hogi.</Text></View>}
+      {activeTool==="Crop"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Aspect ratio</Text><View style={styles.chips}>{["Original","1:1","4:5","9:16","16:9"].map(x=><TouchableOpacity key={x} onPress={()=>setRatio(x)} style={[styles.chip,ratio===x&&styles.chipOn]}><Text style={styles.chipText}>{x}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Photo picker mein basic crop available hai; custom crop/export controls aglay stage mein add honge.</Text></View>}
+      {activeTool==="Text"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add text overlay</Text><TextInput value={caption} onChangeText={setCaption} placeholder="Type your title..." placeholderTextColor={COLORS.muted} style={styles.input}/></View>}
+      {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Music</Text><Text style={styles.hint}>Audio track import aur timeline mixing next stage mein add hogi. Is version mein audio export active nahi hai.</Text></View>}
+      {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Volume setting project ke saath save hogi; final audio rendering abhi enabled nahi.</Text></View>}
+      <PrimaryButton title={busy?"Saving...":"Save project to cloud"} onPress={saveProject} disabled={busy||!asset}/>
+      <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
+    </ScrollView>}
+
+    {screen==="Projects"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>My Projects</Text><Text style={styles.sub}>Your saved Clipora edits.</Text>
+      {projects.length===0&&<Text style={styles.empty}>No saved projects yet. Create your first edit.</Text>}
+      {projects.map(p=><View key={p.id} style={styles.projectRow}><View style={styles.projectIcon}><Text style={styles.projectIconText}>{p.media_type==="video"?"▶":"▧"}</Text></View><View style={{flex:1}}><Text style={styles.projectTitle}>{p.title}</Text><Text style={styles.projectMeta}>{(p.media_type||"media").toUpperCase()} • {new Date(p.created_at).toLocaleDateString()}</Text></View><TouchableOpacity onPress={()=>deleteProject(p)}><Text style={styles.deleteText}>Delete</Text></TouchableOpacity></View>)}
+      <PrimaryButton title="Create new edit" onPress={goHome}/>
+    </ScrollView>}
+
+    {screen==="AI"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.eyebrow}>COMING IN NEXT BUILD</Text><Text style={styles.heading}>AI Studio ✦</Text><Text style={styles.sub}>Smart tools planned for Clipora.</Text>
+      {["AI background remover","Auto captions","AI photo enhance","Object remover","Smart video templates"].map(x=><View key={x} style={styles.featureRow}><Text style={styles.featureStar}>✦</Text><Text style={styles.featureText}>{x}</Text><Text style={styles.soon}>PLANNED</Text></View>)}
+      <Text style={styles.hint}>In tools ko chalane ke liye AI service aur secure server connection chahiye. Koi fake working button nahi rakha gaya.</Text>
+    </ScrollView>}
+
+    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><View style={styles.profileCircle}><Text style={styles.profileLetter}>{(session.user.email||"C").slice(0,1).toUpperCase()}</Text></View><Text style={styles.profileEmail}>{session.user.email}</Text><Text style={styles.sub}>Clipora AI creator</Text><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><TouchableOpacity style={styles.secondaryButton} onPress={async()=>{await supabase.auth.signOut();setSession(null);}}><Text style={styles.secondaryText}>Log out</Text></TouchableOpacity></ScrollView>}
+
+    <View style={styles.bottomNav}>{[["Home","⌂"],["Projects","▤"],["AI","✦"],["Profile","●"]].map(([s,ic])=><TouchableOpacity key={s} onPress={()=>setScreen(s)} style={styles.navItem}><Text style={[styles.navIcon,screen===s&&styles.navActive]}>{ic}</Text><Text style={[styles.navText,screen===s&&styles.navActive]}>{s}</Text></TouchableOpacity>)}</View>
   </SafeAreaView>;
 }
 
-const styles = StyleSheet.create({
-  container:{flex:1,backgroundColor:"#101018"},header:{height:62,backgroundColor:"#191326",flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:16},logo:{color:"#ff39d4",fontSize:26,fontWeight:"900"},tagline:{color:"#ddd",fontSize:10,letterSpacing:1},main:{flex:1},content:{flex:1,padding:16},heading:{color:"white",fontSize:22,fontWeight:"bold",marginBottom:16},info:{color:"#bbb",fontSize:14,marginVertical:16,textAlign:"center"},smallInfo:{color:"#999",fontSize:12,marginVertical:10,lineHeight:18},input:{backgroundColor:"#292536",color:"white",padding:15,borderRadius:10,marginBottom:14,fontSize:15},primaryButton:{backgroundColor:"#b51bdb",padding:15,borderRadius:10,alignItems:"center",marginVertical:9},secondaryButton:{backgroundColor:"#343044",padding:13,borderRadius:10,alignItems:"center",marginVertical:10},buttonText:{color:"white",fontSize:15,fontWeight:"bold"},videoCard:{backgroundColor:"#20202a",borderRadius:12,overflow:"hidden",marginBottom:20},videoPlayer:{width:"100%",height:390,backgroundColor:"#000"},previewPlayer:{width:"100%",height:240,backgroundColor:"#000"},videoDetails:{padding:14},username:{color:"#ff62dc",fontWeight:"bold",marginBottom:7},caption:{color:"white",fontSize:16},actions:{flexDirection:"row",gap:28,marginTop:14},actionText:{color:"white",fontSize:17},navigation:{height:66,backgroundColor:"#191326",flexDirection:"row",justifyContent:"space-around",alignItems:"center"},navItem:{alignItems:"center",justifyContent:"center",flex:1},navIcon:{fontSize:21},navText:{color:"#aaa",fontSize:11,marginTop:3},activeNav:{color:"#ff39d4",fontWeight:"bold"},avatar:{fontSize:60,textAlign:"center",marginVertical:12},profilePhoto:{width:112,height:112,borderRadius:56,alignSelf:"center",marginVertical:14,borderWidth:3,borderColor:"#ff39d4"},comment:{color:"white",backgroundColor:"#292536",padding:12,borderRadius:8,marginBottom:8},switchText:{color:"#ff62dc",textAlign:"center",fontSize:15,marginVertical:14},selectedBox:{backgroundColor:"#20202a",borderRadius:12,padding:10,marginVertical:10}
+const styles=StyleSheet.create({
+  container:{flex:1,backgroundColor:COLORS.bg},authWrap:{flex:1,justifyContent:"center",padding:24},logoMark:{alignSelf:"center",width:76,height:76,borderRadius:24,backgroundColor:"#1A1740",borderWidth:1,borderColor:COLORS.pink,alignItems:"center",justifyContent:"center",marginBottom:14},logoC:{fontSize:52,fontWeight:"900",color:COLORS.cyan,lineHeight:58},logoPlay:{position:"absolute",fontSize:17,color:"#FF54C8",right:14,bottom:16},brand:{textAlign:"center",fontSize:34,fontWeight:"900",color:COLORS.text},brandAI:{color:COLORS.cyan},tagline:{textAlign:"center",color:COLORS.muted,marginTop:5,marginBottom:28,letterSpacing:2},panel:{backgroundColor:COLORS.panel,borderRadius:22,padding:20,borderWidth:1,borderColor:COLORS.line},heading:{fontSize:26,fontWeight:"800",color:COLORS.text,marginBottom:10},input:{backgroundColor:COLORS.panel2,borderRadius:12,padding:14,color:COLORS.text,marginTop:10,borderWidth:1,borderColor:COLORS.line},message:{color:"#FFB5D9",marginTop:10},primaryButton:{backgroundColor:COLORS.purple,padding:16,borderRadius:14,alignItems:"center",marginTop:16},primaryText:{color:"white",fontWeight:"800",fontSize:15},switchText:{color:COLORS.cyan,textAlign:"center",marginTop:18,fontWeight:"700"},smallNote:{textAlign:"center",color:COLORS.muted,marginTop:22,fontSize:12},
+  topbar:{height:60,paddingHorizontal:18,flexDirection:"row",alignItems:"center",justifyContent:"space-between",borderBottomWidth:1,borderColor:COLORS.line},brandRow:{flexDirection:"row",alignItems:"center",gap:9},miniLogo:{width:32,height:32,borderRadius:10,backgroundColor:"#282050",alignItems:"center",justifyContent:"center"},miniLogoText:{fontSize:24,fontWeight:"900",color:COLORS.cyan},topBrand:{fontSize:20,fontWeight:"900",color:COLORS.text},avatar:{width:34,height:34,borderRadius:17,backgroundColor:COLORS.purple,color:"white",textAlign:"center",textAlignVertical:"center",fontWeight:"800",overflow:"hidden",paddingTop:7},
+  page:{padding:20,paddingBottom:110},eyebrow:{color:COLORS.cyan,fontWeight:"800",fontSize:11,letterSpacing:2,marginTop:10},hero:{fontSize:42,fontWeight:"900",color:COLORS.text,marginTop:12,lineHeight:46},heroAccent:{color:"#C66CFF"},sub:{color:COLORS.muted,fontSize:14,marginTop:4,marginBottom:20},createGrid:{flexDirection:"row",gap:12,marginTop:22},createCard:{flex:1,minHeight:150,borderRadius:20,padding:16,justifyContent:"flex-end",borderWidth:1},photoCard:{backgroundColor:"#171C39",borderColor:"#3C5BBD"},videoCard:{backgroundColor:"#291638",borderColor:"#8A3D9C"},cardIcon:{fontSize:30,color:COLORS.cyan,marginBottom:15},cardTitle:{fontSize:17,fontWeight:"900",color:COLORS.text},cardSub:{fontSize:11,color:"#C0C5DC",marginTop:4},sectionTitle:{color:COLORS.text,fontSize:18,fontWeight:"800",marginTop:28,marginBottom:12},quickGrid:{flexDirection:"row",flexWrap:"wrap",gap:10},quickItem:{width:"48%",backgroundColor:COLORS.panel,borderRadius:14,padding:14,borderWidth:1,borderColor:COLORS.line},quickIcon:{color:COLORS.cyan,fontSize:22},quickLabel:{color:COLORS.text,fontWeight:"700",marginTop:8},tipBox:{backgroundColor:"#17152E",borderRadius:16,padding:16,marginTop:22,borderWidth:1,borderColor:"#49306D"},tipTitle:{color:COLORS.text,fontWeight:"800",fontSize:15},tipText:{color:COLORS.muted,fontSize:12,lineHeight:19,marginTop:7},
+  rowBetween:{flexDirection:"row",justifyContent:"space-between",alignItems:"center"},back:{color:COLORS.cyan,fontSize:16,fontWeight:"700"},editorLabel:{color:COLORS.muted,fontSize:10,fontWeight:"800",letterSpacing:1.5},titleInput:{color:COLORS.text,fontSize:18,fontWeight:"800",paddingVertical:14},previewFrame:{height:290,backgroundColor:"#03040A",borderRadius:18,overflow:"hidden",alignItems:"center",justifyContent:"center",borderWidth:1,borderColor:COLORS.line},preview:{width:"100%",height:"100%"},captionOverlay:{position:"absolute",bottom:25,left:12,right:12,alignItems:"center"},captionOverlayText:{color:"white",fontWeight:"900",fontSize:24,textShadowColor:"black",textShadowRadius:6},muted:{color:COLORS.muted},toolTabs:{flexDirection:"row",justifyContent:"space-between",marginTop:18,borderBottomWidth:1,borderColor:COLORS.line},toolTab:{paddingVertical:12,paddingHorizontal:9,borderBottomWidth:2,borderColor:"transparent"},toolTabActive:{borderColor:COLORS.cyan},toolTabText:{color:COLORS.muted,fontWeight:"700"},toolTabTextActive:{color:COLORS.cyan},toolPanel:{backgroundColor:COLORS.panel,borderRadius:16,padding:16,marginTop:14,borderWidth:1,borderColor:COLORS.line,minHeight:105},panelTitle:{color:COLORS.text,fontWeight:"800",marginBottom:10},chips:{flexDirection:"row",flexWrap:"wrap",gap:8},chip:{paddingHorizontal:13,paddingVertical:9,borderRadius:20,backgroundColor:COLORS.panel2,borderWidth:1,borderColor:COLORS.line},chipOn:{backgroundColor:"#32245B",borderColor:COLORS.pink},chipText:{color:COLORS.text,fontSize:12,fontWeight:"700"},hint:{color:COLORS.muted,fontSize:11,lineHeight:17,marginTop:12},secondaryButton:{padding:14,alignItems:"center",marginTop:10},secondaryText:{color:COLORS.cyan,fontWeight:"700"},captionOverlayText2:{color:"white"},empty:{color:COLORS.muted,marginTop:30,textAlign:"center",lineHeight:22},projectRow:{flexDirection:"row",alignItems:"center",gap:12,backgroundColor:COLORS.panel,padding:14,borderRadius:14,marginTop:10,borderWidth:1,borderColor:COLORS.line},projectIcon:{width:42,height:42,borderRadius:12,backgroundColor:"#282050",alignItems:"center",justifyContent:"center"},projectIconText:{color:COLORS.cyan,fontSize:20},projectTitle:{color:COLORS.text,fontWeight:"800"},projectMeta:{color:COLORS.muted,fontSize:10,marginTop:4},deleteText:{color:"#FF7B9D",fontWeight:"700",fontSize:12},featureRow:{flexDirection:"row",alignItems:"center",padding:15,backgroundColor:COLORS.panel,borderRadius:14,marginTop:10,borderWidth:1,borderColor:COLORS.line},featureStar:{color:COLORS.cyan,fontSize:20,marginRight:12},featureText:{color:COLORS.text,fontWeight:"700",flex:1},soon:{color:"#D28BFF",fontSize:9,fontWeight:"900"},profileCircle:{width:78,height:78,borderRadius:39,backgroundColor:COLORS.purple,alignItems:"center",justifyContent:"center",alignSelf:"center",marginTop:30},profileLetter:{color:"white",fontSize:36,fontWeight:"900"},profileEmail:{color:COLORS.text,fontWeight:"800",fontSize:16,textAlign:"center",marginTop:14},bottomNav:{height:65,backgroundColor:"#101323",borderTopWidth:1,borderColor:COLORS.line,flexDirection:"row",justifyContent:"space-around",alignItems:"center"},navItem:{alignItems:"center",justifyContent:"center",minWidth:58},navIcon:{fontSize:20,color:COLORS.muted},navText:{fontSize:10,color:COLORS.muted,marginTop:2},navActive:{color:COLORS.cyan,fontWeight:"900"}
 });
