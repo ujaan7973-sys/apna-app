@@ -11,7 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wY74bjbP3xUyD07HuOdeZA_GuMoLtx3";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: false, autoRefreshToken: true, detectSessionInUrl: false }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 });
 
 function FeedVideo({ uri }) {
