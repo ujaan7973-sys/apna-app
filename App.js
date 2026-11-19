@@ -232,7 +232,8 @@ export default function App() {
       <View style={styles.premiumCard}><Text style={styles.premiumBadge}>YEARLY PLAN</Text><Text style={styles.planTitle}>Pro Yearly</Text><Text style={styles.planPrice}>Rs. 4,999 <Text style={styles.planPeriod}>/ year</Text></Text><Text style={styles.planFeature}>• All Pro features</Text><Text style={styles.planFeature}>• Annual plan</Text><TouchableOpacity style={styles.secondaryButton} onPress={()=>{setPaymentPlan("pro_yearly");setScreen("Payment");}}><Text style={styles.secondaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
       <Text style={styles.hint}>Prices are proposed launch prices, not active charges. Payment gateway, receipts, refunds and verified subscription activation must be connected before accepting money.</Text>
     </ScrollView>}
-\n    {screen==="Payment"&&<ScrollView contentContainerStyle={styles.page}>
+
+    {screen==="Payment"&&<ScrollView contentContainerStyle={styles.page}>
       <TouchableOpacity onPress={()=>setScreen("Premium")}><Text style={styles.back}>‹ Back to Premium</Text></TouchableOpacity>
       <Text style={styles.heading}>JazzCash payment</Text>
       <Text style={styles.sub}>{paymentPlan==="pro_monthly"?"Pro Monthly — Rs. 499":"Pro Yearly — Rs. 4,999"}</Text>
