@@ -49,6 +49,8 @@ export default function App() {
   const [transactionReference,setTransactionReference]=useState("");
   const [paymentRequests,setPaymentRequests]=useState([]);
   const [paymentBusy,setPaymentBusy]=useState(false);
+  const [profile,setProfile]=useState({full_name:"",username:"",bio:"",avatar_url:""});
+  const [profileBusy,setProfileBusy]=useState(false);
 
   useEffect(()=>{
     let alive=true;
@@ -57,7 +59,43 @@ export default function App() {
     return ()=>{alive=false;sub.subscription.unsubscribe();};
   },[]);
 
-  useEffect(()=>{ if(session){loadProjects();loadPaymentRequests();} else {setProjects([]);setPaymentRequests([]);} },[session?.user?.id]);
+  useEffect(()=>{ if(session){loadProjects();loadPaymentRequests();loadProfile();} else {setProjects([]);setPaymentRequests([]);setProfile({full_name:"",username:"",bio:"",avatar_url:""});} },[session?.user?.id]);
+
+  const loadProfile=async()=>{
+    if(!session?.user?.id)return;
+    const {data,error}=await supabase.from("profiles").select("full_name,username,bio,avatar_url").eq("id",session.user.id).maybeSingle();
+    if(!error&&data)setProfile({full_name:data.full_name||"",username:data.username||"",bio:data.bio||"",avatar_url:data.avatar_url||""});
+  };
+  const saveProfile=async()=>{
+    setProfileBusy(true);
+    try{
+      const username=profile.username.trim().replace(/[^a-zA-Z0-9_]/g,"").toLowerCase();
+      const {error}=await supabase.from("profiles").upsert({id:session.user.id,full_name:profile.full_name.trim(),username:username||null,bio:profile.bio.trim(),avatar_url:profile.avatar_url||null},{onConflict:"id"});
+      if(error)throw error;
+      setProfile(p=>({...p,username}));
+      Alert.alert("Profile saved","Aapki profile update ho gayi.");
+    }catch(e){Alert.alert("Profile error",e?.message||"Profile save nahi hui.");}
+    finally{setProfileBusy(false);}
+  };
+  const uploadAvatar=async()=>{
+    try{
+      const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if(!permission.granted){Alert.alert("Permission","Gallery access allow karein.");return;}
+      const result=await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],allowsEditing:true,aspect:[1,1],quality:.85});
+      if(result.canceled||!result.assets?.length)return;
+      setProfileBusy(true);
+      const asset=result.assets[0];
+      const response=await fetch(asset.uri);
+      const body=await response.arrayBuffer();
+      const path=session.user.id+"/avatar-"+Date.now()+".jpg";
+      const {error}=await supabase.storage.from("clipora-media").upload(path,body,{contentType:"image/jpeg",upsert:false});
+      if(error)throw error;
+      const {data}=supabase.storage.from("clipora-media").getPublicUrl(path);
+      setProfile(p=>({...p,avatar_url:data.publicUrl}));
+      Alert.alert("Photo selected","Ab Save Profile dabayein.");
+    }catch(e){Alert.alert("Upload error",e?.message||"Profile photo upload nahi hui.");}
+    finally{setProfileBusy(false);}
+  };
 
   const loadPaymentRequests=async()=>{
     const {data,error}=await supabase.from("clipora_payment_requests").select("id,plan_code,amount_pkr,transaction_reference,status,created_at").order("created_at",{ascending:false}).limit(10);
@@ -310,7 +348,7 @@ export default function App() {
       {paymentRequests.length===0?<Text style={styles.empty}>Abhi koi payment request nahi.</Text>:paymentRequests.map(r=><View key={r.id} style={styles.projectRow}><View style={{flex:1}}><Text style={styles.projectTitle}>{r.plan_code==="pro_monthly"?"Pro Monthly":"Pro Yearly"} • Rs. {r.amount_pkr}</Text><Text style={styles.projectMeta}>Ref: {r.transaction_reference}</Text></View><Text style={styles.soon}>{r.status.toUpperCase()}</Text></View>)}
     </ScrollView>}
 
-    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><View style={styles.profileCircle}><Text style={styles.profileLetter}>{(session.user.email||"C").slice(0,1).toUpperCase()}</Text></View><Text style={styles.profileEmail}>{session.user.email}</Text><Text style={styles.sub}>Clipora AI creator</Text><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><TouchableOpacity style={styles.secondaryButton} onPress={async()=>{await supabase.auth.signOut();setSession(null);}}><Text style={styles.secondaryText}>Log out</Text></TouchableOpacity></ScrollView>}
+    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><TouchableOpacity onPress={uploadAvatar} style={styles.profileCircle}>{profile.avatar_url?<Image source={{uri:profile.avatar_url}} style={{width:78,height:78,borderRadius:39}}/>:<Text style={styles.profileLetter}>{(session.user.email||"C").slice(0,1).toUpperCase()}</Text>}</TouchableOpacity><Text style={styles.profileEmail}>{session.user.email}</Text><Text style={styles.sub}>Tap profile photo to change it</Text><TextInput value={profile.full_name} onChangeText={v=>setProfile(p=>({...p,full_name:v}))} placeholder="Your full name" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.username} onChangeText={v=>setProfile(p=>({...p,username:v}))} autoCapitalize="none" placeholder="Username" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.bio} onChangeText={v=>setProfile(p=>({...p,bio:v}))} multiline placeholder="Write your bio..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:90,textAlignVertical:"top"}]}/><PrimaryButton title={profileBusy?"Saving...":"Save Profile"} onPress={saveProfile} disabled={profileBusy}/><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><TouchableOpacity style={styles.secondaryButton} onPress={async()=>{await supabase.auth.signOut();setSession(null);}}><Text style={styles.secondaryText}>Log out</Text></TouchableOpacity></ScrollView>}
 
     <View style={styles.bottomNav}>{[["Home","⌂"],["Projects","▤"],["AI","✦"],["Profile","●"]].map(([s,ic])=><TouchableOpacity key={s} onPress={()=>setScreen(s)} style={styles.navItem}><Text style={[styles.navIcon,screen===s&&styles.navActive]}>{ic}</Text><Text style={[styles.navText,screen===s&&styles.navActive]}>{s}</Text></TouchableOpacity>)}</View>
   </SafeAreaView>;
