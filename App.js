@@ -137,7 +137,8 @@ export default function App() {
     if (!cleanEmail) { setAuthMessage("Pehle apna email address likhein."); return; }
     setLoading(true);
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+      const redirectOptions = typeof window !== "undefined" ? { redirectTo: window.location.origin } : undefined;
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, redirectOptions);
       if (error) setAuthMessage(error.message);
       else setAuthMessage("Agar is email par account hai to password reset link bhej diya gaya hai. Inbox aur Spam folder check karein.");
     } catch (e) {
