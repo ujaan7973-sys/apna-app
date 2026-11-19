@@ -11,7 +11,7 @@ import { createClient } from "@supabase/supabase-js";
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wY74bjbP3xUyD07HuOdeZA_GuMoLtx3";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: typeof localStorage !== "undefined" ? localStorage : undefined }
 });
 
 function FeedVideo({ uri }) {
@@ -38,6 +38,7 @@ export default function App() {
   const [commentText, setCommentText] = useState("");
   const [commentVideo, setCommentVideo] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [authMessage, setAuthMessage] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -67,18 +68,31 @@ export default function App() {
   useEffect(() => { if (session) loadVideos(); }, [session?.user?.id]);
 
   const authAction = async () => {
+    setAuthMessage("");
     if (!email.trim() || password.length < 6) {
-      Alert.alert("APNA", "Email likhein aur password kam az kam 6 characters ka rakhein.");
+      setAuthMessage("Email likhein aur password kam az kam 6 characters ka rakhein.");
       return;
     }
     setLoading(true);
-    const result = authMode === "signup"
-      ? await supabase.auth.signUp({ email: email.trim(), password })
-      : await supabase.auth.signInWithPassword({ email: email.trim(), password });
-    setLoading(false);
-    if (result.error) Alert.alert("Login error", result.error.message);
-    else if (authMode === "signup" && !result.data.session) Alert.alert("Email check karein", "Confirmation email aaye to usay verify karein, phir login karein.");
-    else Alert.alert("APNA", "Account ready hai!");
+    try {
+      const result = authMode === "signup"
+        ? await supabase.auth.signUp({ email: email.trim(), password })
+        : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      if (result.error) {
+        setAuthMessage(result.error.message);
+        return;
+      }
+      if (authMode === "signup" && !result.data.session) {
+        setAuthMessage("Account request ho gayi. Email inbox mein confirmation link check karein, verify karke Login dabayein.");
+      } else {
+        setAuthMessage("Login successful! APNA mein khush aamdeed.");
+        setSession(result.data.session);
+      }
+    } catch (e) {
+      setAuthMessage(e?.message || "Connection error. Internet check karke dobara koshish karein.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const chooseVideo = async () => {
@@ -183,6 +197,7 @@ export default function App() {
         <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
         <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />
         <TouchableOpacity style={styles.primaryButton} onPress={authAction} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : authMode === "login" ? "Login" : "Create Account"}</Text></TouchableOpacity>
+        {authMessage ? <Text style={styles.info}>{authMessage}</Text> : null}
         <TouchableOpacity onPress={() => setAuthMode(authMode === "login" ? "signup" : "login")}><Text style={styles.switchText}>{authMode === "login" ? "New user? Create account" : "Already registered? Login"}</Text></TouchableOpacity>
       </>}
       <Text style={styles.smallInfo}>APNA public video community</Text>
