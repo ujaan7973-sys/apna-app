@@ -27,6 +27,8 @@ export default function App() {
   const [session, setSession] = useState(null);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
   const [authMode, setAuthMode] = useState("login");
   const [tab, setTab] = useState("Home");
   const [videos, setVideos] = useState([]);
@@ -57,6 +59,10 @@ export default function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, next) => {
       if (!mounted) return;
       setSession(next);
+      if (event === "PASSWORD_RECOVERY") {
+        setAuthMode("updatePassword");
+        setAuthMessage("Naya password set karein.");
+      }
       if (next && (event === "SIGNED_IN" || event === "TOKEN_REFRESHED" || event === "INITIAL_SESSION")) {
         setTab("Home");
       }
@@ -123,6 +129,39 @@ export default function App() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const sendPasswordReset = async () => {
+    setAuthMessage("");
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) { setAuthMessage("Pehle apna email address likhein."); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail);
+      if (error) setAuthMessage(error.message);
+      else setAuthMessage("Agar is email par account hai to password reset link bhej diya gaya hai. Inbox aur Spam folder check karein.");
+    } catch (e) {
+      setAuthMessage(e?.message || "Reset email nahi bheji ja saki. Dobara koshish karein.");
+    } finally { setLoading(false); }
+  };
+
+  const saveNewPassword = async () => {
+    setAuthMessage("");
+    if (newPassword.length < 6) { setAuthMessage("Naya password kam az kam 6 characters ka hona chahiye."); return; }
+    if (newPassword !== confirmNewPassword) { setAuthMessage("Dono passwords match nahi karte."); return; }
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.updateUser({ password: newPassword });
+      if (error) setAuthMessage(error.message);
+      else {
+        setPassword(""); setNewPassword(""); setConfirmNewPassword("");
+        setAuthMode("login");
+        setAuthMessage("Password update ho gaya. Ab naye password se login karein.");
+        await supabase.auth.signOut();
+      }
+    } catch (e) {
+      setAuthMessage(e?.message || "Password update nahi ho saka. Reset link dobara mangwayein.");
+    } finally { setLoading(false); }
   };
 
   const chooseVideo = async () => {
@@ -256,10 +295,23 @@ export default function App() {
         <TouchableOpacity style={styles.primaryButton} onPress={async () => { await supabase.auth.signOut(); setVideos([]); setTab("Profile"); }}><Text style={styles.buttonText}>Logout</Text></TouchableOpacity>
       </> : <>
         <Text style={styles.avatar}>👑</Text>
-        <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
-        <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />
-        <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
-        <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044",opacity:loading?0.65:1}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Account ban raha hai..." : "Create New Account"}</Text></TouchableOpacity>
+        {authMode === "updatePassword" ? <>
+          <Text style={styles.info}>Apna naya password do martaba likhein.</Text>
+          <TextInput style={styles.input} placeholder="New password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={newPassword} onChangeText={setNewPassword} />
+          <TextInput style={styles.input} placeholder="Confirm new password" placeholderTextColor="#999" secureTextEntry value={confirmNewPassword} onChangeText={setConfirmNewPassword} />
+          <TouchableOpacity style={styles.primaryButton} onPress={saveNewPassword} disabled={loading}><Text style={styles.buttonText}>{loading ? "Saving..." : "Save New Password"}</Text></TouchableOpacity>
+        </> : <>
+          <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
+          {authMode !== "forgot" && <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />}
+          {authMode === "forgot" ? <>
+            <TouchableOpacity style={styles.primaryButton} onPress={sendPasswordReset} disabled={loading}><Text style={styles.buttonText}>{loading ? "Sending..." : "Send Reset Link"}</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => { setAuthMode("login"); setAuthMessage(""); }}><Text style={styles.switchText}>← Back to Login</Text></TouchableOpacity>
+          </> : <>
+            <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.primaryButton,{backgroundColor:"#343044",opacity:loading?0.65:1}]} onPress={() => authAction("signup")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Account ban raha hai..." : "Create New Account"}</Text></TouchableOpacity>
+            <TouchableOpacity onPress={() => { setAuthMode("forgot"); setAuthMessage(""); }}><Text style={styles.switchText}>Forgot Password?</Text></TouchableOpacity>
+          </>}
+        </>}
         {authMessage ? <Text style={styles.info}>{authMessage}</Text> : null}
       </>}
       <Text style={styles.smallInfo}>APNA public video community</Text>
