@@ -253,6 +253,61 @@ export default function App() {
     finally{setBusy(false);}
   };
 
+  const openProject=(item)=>{
+    const kind=item.media_type==="video"?"video":"image";
+    const settings=item.settings||{};
+    setAsset({uri:item.media_url,fileName:item.title});
+    setMediaKind(kind);
+    setTitle(item.title||"My edit");
+    setFilter(settings.filter||"Original");
+    setRatio(settings.ratio||"Original");
+    setVolume(Number(settings.volume??100));
+    setCaption(settings.caption||"");
+    setScreen("Editor");
+    setActiveTool("Filters");
+  };
+
+  const exportPhoto=async()=>{
+    if(mediaKind!=="image"||!asset?.uri){Alert.alert("Photo required","Pehle photo select karein.");return;}
+    if(Platform.OS!=="web"){Alert.alert("Export unavailable","Photo export ka browser version abhi available hai. Android export ke liye native image-processing module aur APK build chahiye.");return;}
+    try{
+      const img=new window.Image();
+      img.crossOrigin="anonymous";
+      img.src=asset.uri;
+      await new Promise((resolve,reject)=>{img.onload=resolve;img.onerror=()=>reject(new Error("Photo load nahi ho saki."));});
+      const ratios={"1:1":1,"4:5":4/5,"9:16":9/16,"16:9":16/9};
+      const target=ratios[ratio]||img.width/img.height;
+      let sx=0,sy=0,sw=img.width,sh=img.height;
+      if(sw/sh>target){sw=sh*target;sx=(img.width-sw)/2;}else{sh=sw/target;sy=(img.height-sh)/2;}
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(1,Math.round(sw));canvas.height=Math.max(1,Math.round(sh));
+      const ctx=canvas.getContext("2d");
+      ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
+      const tint=filter==="Warm"?"rgba(255,150,45,0.20)":filter==="Cool"?"rgba(55,145,255,0.20)":filter==="Mono"?"rgba(40,40,40,0.48)":filter==="Dream"?"rgba(190,110,255,0.16)":null;
+      if(filter==="Mono"){ctx.globalCompositeOperation="saturation";ctx.fillStyle="rgba(0,0,0,1)";ctx.fillRect(0,0,canvas.width,canvas.height);ctx.globalCompositeOperation="source-over";}
+      if(tint){ctx.fillStyle=tint;ctx.fillRect(0,0,canvas.width,canvas.height);}
+      if(caption.trim()){
+        const fontSize=Math.max(24,Math.round(canvas.width*0.055));
+        ctx.font="900 "+fontSize+"px Arial";
+        ctx.textAlign="center";ctx.textBaseline="bottom";
+        ctx.lineWidth=Math.max(3,fontSize*0.12);ctx.strokeStyle="rgba(0,0,0,0.85)";
+        ctx.fillStyle="#ffffff";
+        const maxWidth=canvas.width*0.9;
+        const words=caption.trim().split(/\\s+/);let lines=[],line="";
+        for(const word of words){const test=line?line+" "+word:word;if(ctx.measureText(test).width>maxWidth&&line){lines.push(line);line=word;}else line=test;}
+        if(line)lines.push(line);
+        const lineHeight=fontSize*1.2;const startY=canvas.height-24-(lines.length-1)*lineHeight;
+        lines.forEach((txt,i)=>{ctx.strokeText(txt,canvas.width/2,startY+i*lineHeight,maxWidth);ctx.fillText(txt,canvas.width/2,startY+i*lineHeight,maxWidth);});
+      }
+      const blob=await new Promise(resolve=>canvas.toBlob(resolve,"image/png"));
+      if(!blob)throw new Error("Image export create nahi hua.");
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement("a");link.href=url;link.download=(title.trim()||"clipora-edit")+".png";
+      document.body.appendChild(link);link.click();link.remove();URL.revokeObjectURL(url);
+      Alert.alert("Export complete","Edited photo PNG mein save ho gayi.");
+    }catch(e){Alert.alert("Export failed",e?.message||"Photo export nahi ho saka.");}
+  };
+
   const deleteProject=async(item)=>{
     Alert.alert("Delete project?","Yeh project list se delete ho jayega.",[
       {text:"Cancel",style:"cancel"},
@@ -328,12 +383,14 @@ export default function App() {
       {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Music</Text><Text style={styles.hint}>Audio track import aur timeline mixing next stage mein add hogi. Is version mein audio export active nahi hai.</Text></View>}
       {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Volume setting project ke saath save hogi; final audio rendering abhi enabled nahi.</Text></View>}
       <PrimaryButton title={busy?"Saving...":"Save project to cloud"} onPress={saveProject} disabled={busy||!asset}/>
+      {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
+      {mediaKind==="video"&&<Text style={styles.hint}>Video preview controls active hain. Final trimmed/music-mixed MP4 export ke liye native video rendering engine abhi add karna baqi hai.</Text>}
       <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
     </ScrollView>}
 
     {screen==="Projects"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>My Projects</Text><Text style={styles.sub}>Your saved Clipora edits.</Text>
       {projects.length===0&&<Text style={styles.empty}>No saved projects yet. Create your first edit.</Text>}
-      {projects.map(p=><View key={p.id} style={styles.projectRow}><View style={styles.projectIcon}><Text style={styles.projectIconText}>{p.media_type==="video"?"▶":"▧"}</Text></View><View style={{flex:1}}><Text style={styles.projectTitle}>{p.title}</Text><Text style={styles.projectMeta}>{(p.media_type||"media").toUpperCase()} • {new Date(p.created_at).toLocaleDateString()}</Text></View><TouchableOpacity onPress={()=>deleteProject(p)}><Text style={styles.deleteText}>Delete</Text></TouchableOpacity></View>)}
+      {projects.map(p=><View key={p.id} style={styles.projectRow}><TouchableOpacity onPress={()=>openProject(p)} style={styles.projectIcon}><Text style={styles.projectIconText}>{p.media_type==="video"?"▶":"▧"}</Text></TouchableOpacity><TouchableOpacity onPress={()=>openProject(p)} style={{flex:1}}><Text style={styles.projectTitle}>{p.title}</Text><Text style={styles.projectMeta}>{(p.media_type||"media").toUpperCase()} • {new Date(p.created_at).toLocaleDateString()}</Text></TouchableOpacity><TouchableOpacity onPress={()=>deleteProject(p)}><Text style={styles.deleteText}>Delete</Text></TouchableOpacity></View>)}
       <PrimaryButton title="Create new edit" onPress={goHome}/>
     </ScrollView>}
 
