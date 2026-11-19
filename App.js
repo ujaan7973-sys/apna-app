@@ -2,7 +2,7 @@ import "react-native-url-polyfill/auto";
 import React, { useEffect, useState } from "react";
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, StatusBar, ActivityIndicator
+  StyleSheet, Alert, StatusBar, ActivityIndicator, Image
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import { useVideoPlayer, VideoView } from "expo-video";
@@ -39,6 +39,9 @@ export default function App() {
   const [commentVideo, setCommentVideo] = useState(null);
   const [loading, setLoading] = useState(false);
   const [authMessage, setAuthMessage] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [profileBio, setProfileBio] = useState("");
+  const [avatarUrl, setAvatarUrl] = useState("");
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session));
@@ -65,7 +68,14 @@ export default function App() {
     }
   };
 
-  useEffect(() => { if (session) loadVideos(); }, [session?.user?.id]);
+  useEffect(() => {
+    if (session) {
+      loadVideos();
+      setProfileName(session.user.user_metadata?.display_name || session.user.email?.split("@")[0] || "APNA User");
+      setProfileBio(session.user.user_metadata?.bio || "");
+      setAvatarUrl(session.user.user_metadata?.avatar_url || "");
+    }
+  }, [session?.user?.id]);
 
   const authAction = async (mode = authMode) => {
     setAuthMessage("");
@@ -88,6 +98,7 @@ export default function App() {
       } else {
         setAuthMessage("Login successful! APNA mein khush aamdeed.");
         setSession(result.data.session);
+        if (result.data.session) setTab("Home");
       }
     } catch (e) {
       setAuthMessage(e?.message || "Connection error. Internet check karke dobara koshish karein.");
@@ -190,11 +201,43 @@ export default function App() {
       <Text style={styles.smallInfo}>Public videos APNA ke sab users ko nazar aayengi.</Text>
     </ScrollView>;
     if (tab === "Profile") return <ScrollView style={styles.content}>
-      <Text style={styles.avatar}>👑</Text><Text style={styles.heading}>APNA Account</Text>
+      <Text style={styles.heading}>My APNA Profile</Text>
       {session ? <>
-        <Text style={styles.info}>Logged in: {session.user.email}</Text>
-        <TouchableOpacity style={styles.primaryButton} onPress={async () => { await supabase.auth.signOut(); setVideos([]); }}><Text style={styles.buttonText}>Logout</Text></TouchableOpacity>
+        {avatarUrl ? <Image source={{uri:avatarUrl}} style={styles.profilePhoto} /> : <Text style={styles.avatar}>👤</Text>}
+        <Text style={styles.info}>{session.user.email}</Text>
+        <TextInput style={styles.input} placeholder="Apna naam likhein" placeholderTextColor="#999" value={profileName} onChangeText={setProfileName} />
+        <TextInput style={[styles.input,{minHeight:90}]} placeholder="Apni bio likhein..." placeholderTextColor="#999" multiline value={profileBio} onChangeText={setProfileBio} />
+        <TouchableOpacity style={styles.primaryButton} onPress={async () => {
+          setLoading(true);
+          const {error} = await supabase.auth.updateUser({data:{display_name:profileName.trim(),bio:profileBio.trim()}});
+          setLoading(false);
+          Alert.alert("APNA", error ? error.message : "Profile save ho gayi!");
+        }} disabled={loading}><Text style={styles.buttonText}>{loading ? "Saving..." : "Save Profile"}</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.secondaryButton} onPress={async () => {
+          const p = await ImagePicker.requestMediaLibraryPermissionsAsync();
+          if (!p.granted) { Alert.alert("Permission","Gallery permission allow karein."); return; }
+          const pick = await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],allowsEditing:true,aspect:[1,1],quality:0.8});
+          if (pick.canceled || !pick.assets?.length) return;
+          setLoading(true);
+          try {
+            const a = pick.assets[0];
+            const ext = (a.fileName || a.uri.split("?")[0]).split(".").pop() || "jpg";
+            const path = session.user.id + "/avatar-" + Date.now() + "." + ext;
+            const response = await fetch(a.uri);
+            const body = await response.arrayBuffer();
+            const {error:upErr} = await supabase.storage.from("apna-videos").upload(path,body,{contentType:a.mimeType || "image/jpeg",upsert:true});
+            if (upErr) throw upErr;
+            const url = supabase.storage.from("apna-videos").getPublicUrl(path).data.publicUrl;
+            const {error:metaErr} = await supabase.auth.updateUser({data:{avatar_url:url}});
+            if (metaErr) throw metaErr;
+            setAvatarUrl(url);
+            Alert.alert("APNA","Profile picture update ho gayi!");
+          } catch(e) { Alert.alert("Upload error",e.message || "Picture upload nahi hui."); }
+          finally { setLoading(false); }
+        }}><Text style={styles.buttonText}>📷 Change Profile Picture</Text></TouchableOpacity>
+        <TouchableOpacity style={styles.primaryButton} onPress={async () => { await supabase.auth.signOut(); setVideos([]); setTab("Profile"); }}><Text style={styles.buttonText}>Logout</Text></TouchableOpacity>
       </> : <>
+        <Text style={styles.avatar}>👑</Text>
         <TextInput style={styles.input} placeholder="Email address" placeholderTextColor="#999" autoCapitalize="none" keyboardType="email-address" value={email} onChangeText={setEmail} />
         <TextInput style={styles.input} placeholder="Password (at least 6 characters)" placeholderTextColor="#999" secureTextEntry value={password} onChangeText={setPassword} />
         <TouchableOpacity style={styles.primaryButton} onPress={() => authAction("login")} disabled={loading}><Text style={styles.buttonText}>{loading ? "Please wait..." : "Login"}</Text></TouchableOpacity>
@@ -227,5 +270,5 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  container:{flex:1,backgroundColor:"#101018"},header:{height:62,backgroundColor:"#191326",flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:16},logo:{color:"#ff39d4",fontSize:26,fontWeight:"900"},tagline:{color:"#ddd",fontSize:10,letterSpacing:1},main:{flex:1},content:{flex:1,padding:16},heading:{color:"white",fontSize:22,fontWeight:"bold",marginBottom:16},info:{color:"#bbb",fontSize:14,marginVertical:16,textAlign:"center"},smallInfo:{color:"#999",fontSize:12,marginVertical:10,lineHeight:18},input:{backgroundColor:"#292536",color:"white",padding:15,borderRadius:10,marginBottom:14,fontSize:15},primaryButton:{backgroundColor:"#b51bdb",padding:15,borderRadius:10,alignItems:"center",marginVertical:9},secondaryButton:{backgroundColor:"#343044",padding:13,borderRadius:10,alignItems:"center",marginVertical:10},buttonText:{color:"white",fontSize:15,fontWeight:"bold"},videoCard:{backgroundColor:"#20202a",borderRadius:12,overflow:"hidden",marginBottom:20},videoPlayer:{width:"100%",height:390,backgroundColor:"#000"},previewPlayer:{width:"100%",height:240,backgroundColor:"#000"},videoDetails:{padding:14},username:{color:"#ff62dc",fontWeight:"bold",marginBottom:7},caption:{color:"white",fontSize:16},actions:{flexDirection:"row",gap:28,marginTop:14},actionText:{color:"white",fontSize:17},navigation:{height:66,backgroundColor:"#191326",flexDirection:"row",justifyContent:"space-around",alignItems:"center"},navItem:{alignItems:"center",justifyContent:"center",flex:1},navIcon:{fontSize:21},navText:{color:"#aaa",fontSize:11,marginTop:3},activeNav:{color:"#ff39d4",fontWeight:"bold"},avatar:{fontSize:60,textAlign:"center",marginVertical:12},comment:{color:"white",backgroundColor:"#292536",padding:12,borderRadius:8,marginBottom:8},switchText:{color:"#ff62dc",textAlign:"center",fontSize:15,marginVertical:14},selectedBox:{backgroundColor:"#20202a",borderRadius:12,padding:10,marginVertical:10}
+  container:{flex:1,backgroundColor:"#101018"},header:{height:62,backgroundColor:"#191326",flexDirection:"row",justifyContent:"space-between",alignItems:"center",paddingHorizontal:16},logo:{color:"#ff39d4",fontSize:26,fontWeight:"900"},tagline:{color:"#ddd",fontSize:10,letterSpacing:1},main:{flex:1},content:{flex:1,padding:16},heading:{color:"white",fontSize:22,fontWeight:"bold",marginBottom:16},info:{color:"#bbb",fontSize:14,marginVertical:16,textAlign:"center"},smallInfo:{color:"#999",fontSize:12,marginVertical:10,lineHeight:18},input:{backgroundColor:"#292536",color:"white",padding:15,borderRadius:10,marginBottom:14,fontSize:15},primaryButton:{backgroundColor:"#b51bdb",padding:15,borderRadius:10,alignItems:"center",marginVertical:9},secondaryButton:{backgroundColor:"#343044",padding:13,borderRadius:10,alignItems:"center",marginVertical:10},buttonText:{color:"white",fontSize:15,fontWeight:"bold"},videoCard:{backgroundColor:"#20202a",borderRadius:12,overflow:"hidden",marginBottom:20},videoPlayer:{width:"100%",height:390,backgroundColor:"#000"},previewPlayer:{width:"100%",height:240,backgroundColor:"#000"},videoDetails:{padding:14},username:{color:"#ff62dc",fontWeight:"bold",marginBottom:7},caption:{color:"white",fontSize:16},actions:{flexDirection:"row",gap:28,marginTop:14},actionText:{color:"white",fontSize:17},navigation:{height:66,backgroundColor:"#191326",flexDirection:"row",justifyContent:"space-around",alignItems:"center"},navItem:{alignItems:"center",justifyContent:"center",flex:1},navIcon:{fontSize:21},navText:{color:"#aaa",fontSize:11,marginTop:3},activeNav:{color:"#ff39d4",fontWeight:"bold"},avatar:{fontSize:60,textAlign:"center",marginVertical:12},profilePhoto:{width:112,height:112,borderRadius:56,alignSelf:"center",marginVertical:14,borderWidth:3,borderColor:"#ff39d4"},comment:{color:"white",backgroundColor:"#292536",padding:12,borderRadius:8,marginBottom:8},switchText:{color:"#ff62dc",textAlign:"center",fontSize:15,marginVertical:14},selectedBox:{backgroundColor:"#20202a",borderRadius:12,padding:10,marginVertical:10}
 });
