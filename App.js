@@ -43,6 +43,10 @@ export default function App() {
   const [projects,setProjects]=useState([]);
   const [busy,setBusy]=useState(false);
   const [tab,setTab]=useState("Home");
+  const [paymentPlan,setPaymentPlan]=useState("pro_monthly");
+  const [transactionReference,setTransactionReference]=useState("");
+  const [paymentRequests,setPaymentRequests]=useState([]);
+  const [paymentBusy,setPaymentBusy]=useState(false);
 
   useEffect(()=>{
     let alive=true;
@@ -51,7 +55,30 @@ export default function App() {
     return ()=>{alive=false;sub.subscription.unsubscribe();};
   },[]);
 
-  useEffect(()=>{ if(session) loadProjects(); else setProjects([]); },[session?.user?.id]);
+  useEffect(()=>{ if(session){loadProjects();loadPaymentRequests();} else {setProjects([]);setPaymentRequests([]);} },[session?.user?.id]);
+
+  const loadPaymentRequests=async()=>{
+    const {data,error}=await supabase.from("clipora_payment_requests").select("id,plan_code,amount_pkr,transaction_reference,status,created_at").order("created_at",{ascending:false}).limit(10);
+    if(!error)setPaymentRequests(data||[]);
+  };
+
+  const submitPaymentRequest=async()=>{
+    const reference=transactionReference.trim();
+    if(reference.length<5){Alert.alert("Transaction ID required","JazzCash receipt par diya gaya transaction/reference ID likhein.");return;}
+    setPaymentBusy(true);
+    try{
+      const amount=paymentPlan==="pro_monthly"?499:4999;
+      const {error}=await supabase.from("clipora_payment_requests").insert({
+        user_id:session.user.id,plan_code:paymentPlan,amount_pkr:amount,
+        merchant_till_id:"984417122",transaction_reference:reference,status:"pending"
+      });
+      if(error)throw error;
+      setTransactionReference("");
+      await loadPaymentRequests();
+      Alert.alert("Request submitted","Aapki payment request pending hai. Admin JazzCash Business mein payment verify karega. Verification se pehle Premium active nahi hoga.");
+    }catch(e){Alert.alert("Submit failed",e?.message||"Payment request submit nahi hui.");}
+    finally{setPaymentBusy(false);}
+  };
 
   const loadProjects=async()=>{
     const {data,error}=await supabase.from("clipora_projects").select("*").order("created_at",{ascending:false}).limit(30);
@@ -201,11 +228,31 @@ export default function App() {
       <Text style={styles.eyebrow}>SUPPORT THE CREATOR</Text><Text style={styles.heading}>Clipora Premium ✦</Text>
       <Text style={styles.sub}>Unlock more creative tools with a paid plan.</Text>
       <View style={styles.premiumCard}><Text style={styles.premiumBadge}>FREE</Text><Text style={styles.planTitle}>Free</Text><Text style={styles.planPrice}>Rs. 0</Text><Text style={styles.planFeature}>• Basic photo and video preview</Text><Text style={styles.planFeature}>• Limited cloud projects</Text></View>
-      <View style={[styles.premiumCard,styles.proCard]}><Text style={styles.premiumBadge}>MOST POPULAR</Text><Text style={styles.planTitle}>Pro Monthly</Text><Text style={styles.planPrice}>Rs. 499 <Text style={styles.planPeriod}>/ month</Text></Text><Text style={styles.planFeature}>• Premium templates and effects</Text><Text style={styles.planFeature}>• More cloud projects</Text><Text style={styles.planFeature}>• No-watermark export when export engine is available</Text><TouchableOpacity style={styles.primaryButton} onPress={()=>Alert.alert("Coming soon","Payment checkout abhi connect nahi hua. Paid plan activate karne se pehle secure payment verification add hogi.")}><Text style={styles.primaryText}>Get Pro — coming soon</Text></TouchableOpacity></View>
-      <View style={styles.premiumCard}><Text style={styles.premiumBadge}>YEARLY PLAN</Text><Text style={styles.planTitle}>Pro Yearly</Text><Text style={styles.planPrice}>Rs. 4,999 <Text style={styles.planPeriod}>/ year</Text></Text><Text style={styles.planFeature}>• All Pro features</Text><Text style={styles.planFeature}>• Annual plan</Text><TouchableOpacity style={styles.secondaryButton} onPress={()=>Alert.alert("Coming soon","Secure payment setup is still pending.")}><Text style={styles.secondaryText}>Choose yearly — coming soon</Text></TouchableOpacity></View>
+      <View style={[styles.premiumCard,styles.proCard]}><Text style={styles.premiumBadge}>MOST POPULAR</Text><Text style={styles.planTitle}>Pro Monthly</Text><Text style={styles.planPrice}>Rs. 499 <Text style={styles.planPeriod}>/ month</Text></Text><Text style={styles.planFeature}>• Premium templates and effects</Text><Text style={styles.planFeature}>• More cloud projects</Text><Text style={styles.planFeature}>• No-watermark export when export engine is available</Text><TouchableOpacity style={styles.primaryButton} onPress={()=>{setPaymentPlan("pro_monthly");setScreen("Payment");}}><Text style={styles.primaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
+      <View style={styles.premiumCard}><Text style={styles.premiumBadge}>YEARLY PLAN</Text><Text style={styles.planTitle}>Pro Yearly</Text><Text style={styles.planPrice}>Rs. 4,999 <Text style={styles.planPeriod}>/ year</Text></Text><Text style={styles.planFeature}>• All Pro features</Text><Text style={styles.planFeature}>• Annual plan</Text><TouchableOpacity style={styles.secondaryButton} onPress={()=>{setPaymentPlan("pro_yearly");setScreen("Payment");}}><Text style={styles.secondaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
       <Text style={styles.hint}>Prices are proposed launch prices, not active charges. Payment gateway, receipts, refunds and verified subscription activation must be connected before accepting money.</Text>
     </ScrollView>}
-\n    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><View style={styles.profileCircle}><Text style={styles.profileLetter}>{(session.user.email||"C").slice(0,1).toUpperCase()}</Text></View><Text style={styles.profileEmail}>{session.user.email}</Text><Text style={styles.sub}>Clipora AI creator</Text><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><TouchableOpacity style={styles.secondaryButton} onPress={async()=>{await supabase.auth.signOut();setSession(null);}}><Text style={styles.secondaryText}>Log out</Text></TouchableOpacity></ScrollView>}
+\n    {screen==="Payment"&&<ScrollView contentContainerStyle={styles.page}>
+      <TouchableOpacity onPress={()=>setScreen("Premium")}><Text style={styles.back}>‹ Back to Premium</Text></TouchableOpacity>
+      <Text style={styles.heading}>JazzCash payment</Text>
+      <Text style={styles.sub}>{paymentPlan==="pro_monthly"?"Pro Monthly — Rs. 499":"Pro Yearly — Rs. 4,999"}</Text>
+      <View style={styles.premiumCard}>
+        <Text style={styles.premiumBadge}>BUSINESS TILL ID</Text>
+        <Text selectable style={styles.planPrice}>984417122</Text>
+        <Text style={styles.planFeature}>Merchant: Clipora AI business payment</Text>
+        <Text style={styles.hint}>JazzCash app mein merchant/Till payment ka supported option use karein. Payment se pehle merchant name aur amount apni receipt par check karein. Agar app Till ID accept na kare, payment na bhejein.</Text>
+      </View>
+      <View style={styles.toolPanel}>
+        <Text style={styles.panelTitle}>Transaction / Reference ID</Text>
+        <TextInput value={transactionReference} onChangeText={setTransactionReference} placeholder="Receipt ka transaction ID" placeholderTextColor={COLORS.muted} style={styles.input} autoCapitalize="characters" />
+        <PrimaryButton title={paymentBusy?"Submitting...":"Submit payment for verification"} onPress={submitPaymentRequest} disabled={paymentBusy}/>
+        <Text style={styles.hint}>Sirf request submit hogi. Premium tabhi activate hoga jab business account owner payment verify kare. Screenshot ya fake receipt se automatic activation nahi hogi.</Text>
+      </View>
+      <Text style={styles.sectionTitle}>My payment requests</Text>
+      {paymentRequests.length===0?<Text style={styles.empty}>Abhi koi payment request nahi.</Text>:paymentRequests.map(r=><View key={r.id} style={styles.projectRow}><View style={{flex:1}}><Text style={styles.projectTitle}>{r.plan_code==="pro_monthly"?"Pro Monthly":"Pro Yearly"} • Rs. {r.amount_pkr}</Text><Text style={styles.projectMeta}>Ref: {r.transaction_reference}</Text></View><Text style={styles.soon}>{r.status.toUpperCase()}</Text></View>)}
+    </ScrollView>}
+
+    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><View style={styles.profileCircle}><Text style={styles.profileLetter}>{(session.user.email||"C").slice(0,1).toUpperCase()}</Text></View><Text style={styles.profileEmail}>{session.user.email}</Text><Text style={styles.sub}>Clipora AI creator</Text><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><TouchableOpacity style={styles.secondaryButton} onPress={async()=>{await supabase.auth.signOut();setSession(null);}}><Text style={styles.secondaryText}>Log out</Text></TouchableOpacity></ScrollView>}
 
     <View style={styles.bottomNav}>{[["Home","⌂"],["Projects","▤"],["AI","✦"],["Profile","●"]].map(([s,ic])=><TouchableOpacity key={s} onPress={()=>setScreen(s)} style={styles.navItem}><Text style={[styles.navIcon,screen===s&&styles.navActive]}>{ic}</Text><Text style={[styles.navText,screen===s&&styles.navActive]}>{s}</Text></TouchableOpacity>)}</View>
   </SafeAreaView>;
