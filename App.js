@@ -29,6 +29,8 @@ export default function App() {
   const [authMode,setAuthMode]=useState("login");
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
+  const [otp,setOtp]=useState("");
+  const [otpPending,setOtpPending]=useState(false);
   const [authBusy,setAuthBusy]=useState(false);
   const [authMessage,setAuthMessage]=useState("");
   const [screen,setScreen]=useState("Home");
@@ -85,19 +87,65 @@ export default function App() {
     if(!error)setProjects(data||[]);
   };
 
+  const normalizedPhone=(value)=>{
+    const digits=value.replace(/[^0-9+]/g,"");
+    if(digits.startsWith("+"))return digits;
+    if(digits.startsWith("03")&&digits.length===11)return "+92"+digits.slice(1);
+    if(digits.startsWith("92"))return "+"+digits;
+    return digits;
+  };
+  const isPhone=(value)=>/^(\\+?[0-9]{10,15})$/.test(normalizedPhone(value));
   const signIn=async()=>{
     setAuthMessage("");
-    if(!email.trim()||password.length<6){setAuthMessage("Email aur kam az kam 6 characters ka password likhein.");return;}
+    const identifier=email.trim();
+    if(!identifier){setAuthMessage("Email ya mobile number likhein.");return;}
+    if(password.length<6){setAuthMessage("Password kam az kam 6 characters ka hona chahiye.");return;}
     setAuthBusy(true);
     try{
-      const clean=email.trim().toLowerCase();
+      const phone=isPhone(identifier);
       const result=authMode==="signup"
-        ? await supabase.auth.signUp({email:clean,password,options:{emailRedirectTo:typeof window!=="undefined"?window.location.origin:undefined}})
-        : await supabase.auth.signInWithPassword({email:clean,password});
+        ? phone
+          ? await supabase.auth.signUp({phone:normalizedPhone(identifier),password})
+          : await supabase.auth.signUp({email:identifier.toLowerCase(),password,options:{emailRedirectTo:typeof window!=="undefined"?window.location.origin:undefined}})
+        : phone
+          ? await supabase.auth.signInWithPassword({phone:normalizedPhone(identifier),password})
+          : await supabase.auth.signInWithPassword({email:identifier.toLowerCase(),password});
       if(result.error) setAuthMessage(result.error.message);
-      else if(authMode==="signup"&&!result.data.session) setAuthMessage("Account request ho gayi. Email verify karke login karein.");
-      else {setSession(result.data.session);setAuthMessage("Login successful.");}
+      else if(authMode==="signup"&&!result.data.session){
+        setOtpPending(phone);
+        setAuthMessage(phone?"SMS code bhej diya gaya hai. Code verify karein.":"Account request ho gayi. Email verify karke login karein.");
+      } else {setSession(result.data.session);setAuthMessage("Login successful.");}
     }catch(e){setAuthMessage(e?.message||"Connection error.");}
+    finally{setAuthBusy(false);}
+  };
+  const verifyPhoneOtp=async()=>{
+    const phone=normalizedPhone(email.trim());
+    if(otp.trim().length<4){setAuthMessage("SMS verification code likhein.");return;}
+    setAuthBusy(true);
+    try{
+      const {data,error}=await supabase.auth.verifyOtp({phone,token:otp.trim(),type:"sms"});
+      if(error)throw error;
+      setSession(data.session);setOtpPending(false);setOtp("");setAuthMessage("Mobile number verified. Welcome to Clipora AI.");
+    }catch(e){setAuthMessage(e?.message||"OTP verify nahi hua.");}
+    finally{setAuthBusy(false);}
+  };
+  const socialLogin=async(provider)=>{
+    if(Platform.OS!=="web"){setAuthMessage("Google/Facebook login filhal web version par available hai.");return;}
+    setAuthBusy(true);setAuthMessage("");
+    try{
+      const {error}=await supabase.auth.signInWithOAuth({provider,options:{redirectTo:window.location.origin}});
+      if(error)throw error;
+    }catch(e){setAuthMessage(e?.message||provider+" login setup nahi hai. Supabase mein provider configure karein.");setAuthBusy(false);}
+  };
+  const resetPassword=async()=>{
+    const value=email.trim();
+    if(!value||isPhone(value)){setAuthMessage("Password reset ke liye apna registered email likhein.");return;}
+    setAuthBusy(true);
+    try{
+      const {error}=await supabase.auth.resetPasswordForEmail(value.toLowerCase(),{redirectTo:typeof window!=="undefined"?window.location.origin:undefined});
+      if(error)throw error;
+      setAuthMessage("Password reset link aapke email par bhej diya gaya hai.");
+    }catch(e){setAuthMessage(e?.message||"Reset link nahi bheja ja saka.");}
     finally{setAuthBusy(false);}
   };
 
@@ -165,11 +213,20 @@ export default function App() {
         <Text style={styles.tagline}>Create. Edit. Shine.</Text>
         <View style={styles.panel}>
           <Text style={styles.heading}>{authMode==="login"?"Welcome back":"Create your account"}</Text>
-          <TextInput value={email} onChangeText={setEmail} autoCapitalize="none" keyboardType="email-address" placeholder="Email address" placeholderTextColor={COLORS.muted} style={styles.input}/>
-          <TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password (6+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/>
+          <TextInput value={email} onChangeText={v=>{setEmail(v);setOtpPending(false);}} autoCapitalize="none" keyboardType="email-address" placeholder="Email or mobile (03XXXXXXXXX)" placeholderTextColor={COLORS.muted} style={styles.input}/>
+          {!otpPending&&<TextInput value={password} onChangeText={setPassword} secureTextEntry placeholder="Password (6+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/>}
+          {otpPending&&<TextInput value={otp} onChangeText={setOtp} keyboardType="number-pad" placeholder="SMS verification code" placeholderTextColor={COLORS.muted} style={styles.input}/>}
           {!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}
-          <PrimaryButton title={authBusy?"Please wait...":authMode==="login"?"Log in":"Create account"} onPress={signIn} disabled={authBusy}/>
-          <TouchableOpacity onPress={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}><Text style={styles.switchText}>{authMode==="login"?"New to Clipora? Create account":"Already registered? Log in"}</Text></TouchableOpacity>
+          {otpPending
+            ? <PrimaryButton title={authBusy?"Verifying...":"Verify mobile number"} onPress={verifyPhoneOtp} disabled={authBusy}/>
+            : <PrimaryButton title={authBusy?"Please wait...":authMode==="login"?"Log in":"Create account"} onPress={signIn} disabled={authBusy}/>}
+          {!otpPending&&authMode==="login"&&<TouchableOpacity onPress={resetPassword}><Text style={styles.switchText}>Forgot password?</Text></TouchableOpacity>}
+          {!otpPending&&<TouchableOpacity onPress={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}><Text style={styles.switchText}>{authMode==="login"?"New to Clipora? Create account":"Already registered? Log in"}</Text></TouchableOpacity>}
+          {!otpPending&&Platform.OS==="web"&&<View style={{marginTop:16}}>
+            <PrimaryButton title="Continue with Google" onPress={()=>socialLogin("google")} disabled={authBusy}/>
+            <TouchableOpacity style={styles.secondaryButton} onPress={()=>socialLogin("facebook")}><Text style={styles.secondaryText}>Continue with Facebook</Text></TouchableOpacity>
+          </View>}
+          <Text style={styles.hint}>Mobile OTP aur social login tabhi kaam karenge jab Supabase Auth mein SMS / Google / Facebook providers configure hon.</Text>
         </View>
         <Text style={styles.smallNote}>Your creative workspace, in your pocket.</Text>
       </View>
