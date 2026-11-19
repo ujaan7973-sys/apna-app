@@ -132,7 +132,7 @@ export default function App() {
     if(digits.startsWith("92"))return "+"+digits;
     return digits;
   };
-  const isPhone=(value)=>/^(\\+?[0-9]{10,15})$/.test(normalizedPhone(value));
+  const isPhone=(value)=>/^\+?[0-9]{10,15}$/.test(normalizedPhone(value));
   const signIn=async()=>{
     setAuthMessage("");
     const identifier=email.trim();
