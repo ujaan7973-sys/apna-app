@@ -15,6 +15,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { createClient } from "@supabase/supabase-js";
 import * as WebBrowser from "expo-web-browser";
+import { WebView } from "react-native-webview";
 import { requireNativeModule } from "expo-modules-core";
 
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
@@ -76,6 +77,7 @@ export default function App() {
   const [transactionReference,setTransactionReference]=useState("");
   const [paymentRequests,setPaymentRequests]=useState([]);
   const [paymentBusy,setPaymentBusy]=useState(false);
+  const [jazzCheckoutHtml,setJazzCheckoutHtml]=useState("");
   const [profile,setProfile]=useState({full_name:"",username:"",bio:"",avatar_url:""});
   const [profileBusy,setProfileBusy]=useState(false);
   const [aiPrompt,setAiPrompt]=useState("");
@@ -138,6 +140,22 @@ export default function App() {
   const loadPaymentRequests=async()=>{
     const {data,error}=await supabase.from("clipora_payment_requests").select("id,plan_code,amount_pkr,transaction_reference,status,created_at").order("created_at",{ascending:false}).limit(10);
     if(!error)setPaymentRequests(data||[]);
+  };
+
+  const startJazzCashCheckout=async()=>{
+    if(!session){Alert.alert("Login required","JazzCash se Pro lene ke liye pehle account login karein.");setScreen("Auth");return;}
+    setPaymentBusy(true);
+    try{
+      const {data,error}=await supabase.functions.invoke("clipora-jazzcash",{body:{action:"start",plan_code:paymentPlan}});
+      if(error)throw error;
+      if(data?.error)throw new Error(data.error);
+      if(!data?.paymentPortalUrl||!data?.fields)throw new Error("JazzCash checkout details nahi mile.");
+      const escapeHtml=(value)=>String(value??"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+      const inputs=Object.entries(data.fields).map(([name,value])=>'<input type="hidden" name="'+escapeHtml(name)+'" value="'+escapeHtml(value)+'">').join("");
+      const html='<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"></head><body style="font-family:Arial;background:#090B16;color:white;text-align:center;padding:30px"><p>Connecting securely to JazzCash…</p><form id="jc" method="post" action="'+escapeHtml(data.paymentPortalUrl)+'">'+inputs+'<button type="submit">Continue to JazzCash</button></form><script>document.getElementById("jc").submit();</script></body></html>';
+      setJazzCheckoutHtml(html);setScreen("JazzCashCheckout");
+    }catch(e){Alert.alert("JazzCash checkout",e?.message||"Gateway abhi configure nahi hua.");}
+    finally{setPaymentBusy(false);}
   };
 
   const submitPaymentRequest=async()=>{
@@ -678,10 +696,15 @@ export default function App() {
       <Text style={styles.heading}>JazzCash payment</Text>
       <Text style={styles.sub}>{paymentPlan==="pro_monthly"?"Pro Monthly — Rs. 499":"Pro Yearly — Rs. 4,999"}</Text>
       <View style={styles.premiumCard}>
-        <Text style={styles.premiumBadge}>BUSINESS TILL ID</Text>
+        <Text style={styles.premiumBadge}>SECURE ONLINE CHECKOUT</Text>
+        <Text style={styles.planFeature}>JazzCash mobile account checkout</Text>
+        <PrimaryButton title={paymentBusy?"Connecting…":"Pay securely with JazzCash"} onPress={startJazzCashCheckout} disabled={paymentBusy}/>
+        <Text style={styles.hint}>Gateway merchant credentials configure hone ke baad JazzCash checkout khulega. Payment status JazzCash ke signed response se verify hoga.</Text>
+      </View>
+      <View style={styles.premiumCard}>
+        <Text style={styles.premiumBadge}>MANUAL PAYMENT FALLBACK</Text>
         <Text selectable style={styles.planPrice}>984417122</Text>
-        <Text style={styles.planFeature}>Merchant: Clipora AI business payment</Text>
-        <Text style={styles.hint}>JazzCash app mein merchant/Till payment ka supported option use karein. Payment se pehle merchant name aur amount apni receipt par check karein. Agar app Till ID accept na kare, payment na bhejein.</Text>
+        <Text style={styles.planFeature}>Till ID — payment bhejne se pehle merchant name verify karein.</Text>
       </View>
       <View style={styles.toolPanel}>
         <Text style={styles.panelTitle}>Transaction / Reference ID</Text>
@@ -692,6 +715,8 @@ export default function App() {
       <Text style={styles.sectionTitle}>My payment requests</Text>
       {paymentRequests.length===0?<Text style={styles.empty}>Abhi koi payment request nahi.</Text>:paymentRequests.map(r=><View key={r.id} style={styles.projectRow}><View style={{flex:1}}><Text style={styles.projectTitle}>{r.plan_code==="pro_monthly"?"Pro Monthly":"Pro Yearly"} • Rs. {r.amount_pkr}</Text><Text style={styles.projectMeta}>Ref: {r.transaction_reference}</Text></View><Text style={styles.soon}>{r.status.toUpperCase()}</Text></View>)}
     </ScrollView>}
+
+    {screen==="JazzCashCheckout"&&<View style={{flex:1,backgroundColor:COLORS.bg}}><View style={styles.topbar}><TouchableOpacity onPress={()=>setScreen("Payment")}><Text style={styles.back}>‹ Back</Text></TouchableOpacity><Text style={styles.editorLabel}>JAZZCASH CHECKOUT</Text></View><WebView source={{html:jazzCheckoutHtml}} originWhitelist={["*"]} javaScriptEnabled domStorageEnabled onLoadEnd={(event)=>{if(String(event.nativeEvent.url||"").includes("/functions/v1/clipora-jazzcash")){loadPaymentRequests().then(()=>setScreen("Payment"));}}} onError={()=>Alert.alert("Checkout error","JazzCash page load nahi hui. Dobara try karein.")}/></View>}
 
     {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text>{!session&&<PrimaryButton title="Log in / Create account" onPress={()=>setScreen("Auth")}/> }<TouchableOpacity onPress={uploadAvatar} style={styles.profileCircle}>{profile.avatar_url?<Image source={{uri:profile.avatar_url}} style={{width:78,height:78,borderRadius:39}}/>:<Text style={styles.profileLetter}>{(session?.user?.email||session?.user?.phone||"C").slice(0,1).toUpperCase()}</Text>}</TouchableOpacity><Text style={styles.profileEmail}>{session?.user?.email||session?.user?.phone||"Guest mode — no login"}</Text><Text style={styles.sub}>Tap profile photo to change it</Text><TextInput value={profile.full_name} onChangeText={v=>setProfile(p=>({...p,full_name:v}))} placeholder="Your full name" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.username} onChangeText={v=>setProfile(p=>({...p,username:v}))} autoCapitalize="none" placeholder="Username" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.bio} onChangeText={v=>setProfile(p=>({...p,bio:v}))} multiline placeholder="Write your bio..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:90,textAlignVertical:"top"}]}/><PrimaryButton title={profileBusy?"Saving...":"Save Profile"} onPress={saveProfile} disabled={profileBusy}/><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><Text style={styles.hint}>Guest mode: bina login ke editing use karein.</Text></ScrollView>}
 
