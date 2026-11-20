@@ -28,6 +28,7 @@
     "react-native-svg": "15.12.1",
     "expo-file-system": "~19.0.21",
     "expo-web-browser": "~15.0.8",
-    "react-native-webview": "~13.15.0"
+    "react-native-webview": "~13.15.0",
+    "clipora-video-renderer": "file:./modules/clipora-video-renderer"
   }
 }
