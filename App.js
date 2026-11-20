@@ -13,6 +13,7 @@ import { captureRef } from "react-native-view-shot";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { createClient } from "@supabase/supabase-js";
+import { requireNativeModule } from "expo-modules-core";
 
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wY74bjbP3xUyD07HuOdeZA_GuMoLtx3";
@@ -403,7 +404,27 @@ export default function App() {
 
   const exportVideo=async()=>{
     if(mediaKind!=="video"||!asset?.uri){Alert.alert("Video required","Pehle video select karein.");return;}
-    if(Platform.OS!=="web"){Alert.alert("Export unavailable","Video export filhal web browser par available hai. Android native export ke liye alag rendering module aur APK build chahiye.");return;}
+    if(Platform.OS!=="web"){
+      if(exportQuality==="2K"&&!isPremium){chooseExportQuality("2K");return;}
+      setBusy(true);
+      try{
+        const NativeRenderer=requireNativeModule("CliporaVideoRenderer");
+        const sourceWidth=Number(asset.width)||1920;
+        const sourceHeight=Number(asset.height)||1080;
+        const scale=2560/Math.max(sourceWidth,sourceHeight);
+        const targetWidth=Math.max(2,Math.round((sourceWidth*scale)/2)*2);
+        const targetHeight=Math.max(2,Math.round((sourceHeight*scale)/2)*2);
+        const outputPath=(await import("expo-file-system/legacy")).cacheDirectory+"clipora-"+Date.now()+".mp4";
+        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,exportQuality==="2K"?targetWidth:sourceWidth,exportQuality==="2K"?targetHeight:sourceHeight);
+        const permission=await MediaLibrary.requestPermissionsAsync();
+        if(!permission.granted)throw new Error("Gallery permission allow karein.");
+        await MediaLibrary.createAssetAsync(outputUri);
+        Alert.alert("Export complete",`Edited video MP4 mein Gallery mein save ho gayi. Output: ${exportQuality}.`);
+      }catch(e){
+        Alert.alert("Export failed",e?.message||"Native video rendering fail hui. Dobara try karein.");
+      }finally{setBusy(false);}
+      return;
+    }
     if(typeof MediaRecorder==="undefined"){Alert.alert("Browser unsupported","Is browser mein video export supported nahi. Chrome ka latest version try karein.");return;}
     setBusy(true);
     let recorder, video, canvasStream, sourceStream;
@@ -563,7 +584,7 @@ export default function App() {
       {mediaKind==="video"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Video export quality</Text><View style={styles.chips}><TouchableOpacity onPress={()=>chooseExportQuality("1080p")} style={[styles.chip,exportQuality==="1080p"&&styles.chipOn]}><Text style={styles.chipText}>1080p · Free</Text></TouchableOpacity><TouchableOpacity onPress={()=>chooseExportQuality("2K")} style={[styles.chip,exportQuality==="2K"&&styles.chipOn]}><Text style={styles.chipText}>{isPremium?"2K · Pro ✓":"🔒 2K · Upgrade"}</Text></TouchableOpacity></View><Text style={styles.hint}>{isPremium?"Pro active: 2K render output unlocked. Source video ki original detail se zyada detail create nahi hoti.":"2K export Pro members ke liye locked hai. Upgrade karein aur payment verify hone ke baad unlock hoga."}</Text></View>}
       <PrimaryButton title={busy?"Saving...":"Save Project"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
-      {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":`Export edited video (${exportQuality} WebM)`} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>2K rendering is currently supported in the web export path. Android native MP4 rendering and music-track mixing still require the native rendering engine.</Text></>}
+      {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":`Export edited video (${exportQuality} MP4)`} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>Android export uses the native MP4 rendering engine. Added music-track mixing is a separate next-stage feature.</Text></>}
       <TouchableOpacity onPress={resetEdits} style={styles.secondaryButton}><Text style={styles.secondaryText}>Reset all edits</Text></TouchableOpacity>
       <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
     </ScrollView>}
