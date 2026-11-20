@@ -1,10 +1,14 @@
 package expo.modules.cliporavideorenderer
 
 import android.net.Uri
+import androidx.media3.common.Effect
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.effect.Brightness
+import androidx.media3.effect.Contrast
 import androidx.media3.effect.Presentation
+import androidx.media3.effect.RgbFilter
 import androidx.media3.transformer.Composition
 import androidx.media3.transformer.EditedMediaItem
 import androidx.media3.transformer.EditedMediaItemSequence
@@ -22,7 +26,7 @@ class CliporaVideoRendererModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("CliporaVideoRenderer")
 
-    AsyncFunction("exportVideo") { inputUri: String, outputPath: String, width: Int, height: Int, musicUri: String, trimStartMs: Long, trimEndMs: Long, promise: Promise ->
+    AsyncFunction("exportVideo") { inputUri: String, outputPath: String, width: Int, height: Int, filterName: String, ratio: String, brightnessValue: Double, contrastValue: Double, musicUri: String, trimStartMs: Long, trimEndMs: Long, promise: Promise ->
       try {
         val context = appContext.reactContext ?: throw IllegalStateException("Android context unavailable")
         val outputFile = File(outputPath)
@@ -36,11 +40,17 @@ class CliporaVideoRendererModule : Module() {
           if (trimEndMs > trimStartMs) clipping.setEndPositionMs(trimEndMs)
           baseItem.setClippingConfiguration(clipping.build())
         }
+        val layout = if (ratio == "Original") Presentation.LAYOUT_SCALE_TO_FIT else Presentation.LAYOUT_SCALE_TO_FIT_WITH_CROP
         val presentation = Presentation.createForWidthAndHeight(
-          width.coerceAtLeast(2), height.coerceAtLeast(2), Presentation.LAYOUT_SCALE_TO_FIT
+          width.coerceAtLeast(2), height.coerceAtLeast(2), layout
         )
+        val videoEffects = mutableListOf<Effect>()
+        if (filterName == "Mono" || filterName == "Noir") videoEffects.add(RgbFilter.createGrayscaleFilter())
+        if (brightnessValue != 0.0) videoEffects.add(Brightness(brightnessValue.toFloat().coerceIn(-1f, 1f)))
+        if (contrastValue != 0.0) videoEffects.add(Contrast(contrastValue.toFloat().coerceIn(-1f, 1f)))
+        videoEffects.add(presentation)
         val videoItem = EditedMediaItem.Builder(baseItem.build())
-          .setEffects(Effects(emptyList(), listOf(presentation)))
+          .setEffects(Effects(emptyList(), videoEffects))
           .build()
 
         val transformer = Transformer.Builder(context)
