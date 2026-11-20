@@ -285,6 +285,17 @@ export default function App() {
     setActiveTool("Filters");
   };
 
+  const resetEdits=()=>{
+    setFilter("Original");
+    setRatio("Original");
+    setVolume(100);
+    setCaption("");
+    setCaptionSize(24);
+    setCaptionColor("#FFFFFF");
+    setCaptionPosition("Bottom");
+    Alert.alert("Edits reset","Filter, crop, text aur volume default par aa gaye.");
+  };
+
   const exportPhoto=async()=>{
     if(mediaKind!=="image"||!asset?.uri){Alert.alert("Photo required","Pehle photo select karein.");return;}
     if(Platform.OS!=="web"){
@@ -498,6 +509,7 @@ export default function App() {
       <PrimaryButton title={busy?"Saving...":"Save Project"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
       {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":"Export edited video (WebM)"} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>Web export creates a WebM with crop, filter, text and original audio. Native Android video rendering, music-track mixing and MP4 export are not yet included.</Text></>}
+      <TouchableOpacity onPress={resetEdits} style={styles.secondaryButton}><Text style={styles.secondaryText}>Reset all edits</Text></TouchableOpacity>
       <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
     </ScrollView>}
 
@@ -507,7 +519,7 @@ export default function App() {
       <PrimaryButton title="Create new edit" onPress={goHome}/>
     </ScrollView>}
 
-    {screen==="AI"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.eyebrow}>COMING IN NEXT BUILD</Text><Text style={styles.heading}>AI Studio ✦</Text><Text style={styles.sub}>Smart tools planned for Clipora.</Text>
+    {screen==="AI"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.eyebrow}>CLIPORA AI STUDIO</Text><Text style={styles.heading}>AI Studio ✦</Text><Text style={styles.sub}>AI services are not connected yet. These features will appear when a secure provider is configured.</Text>
       {["AI background remover","Auto captions","AI photo enhance","Object remover","Smart video templates"].map(x=><View key={x} style={styles.featureRow}><Text style={styles.featureStar}>✦</Text><Text style={styles.featureText}>{x}</Text><Text style={styles.soon}>PLANNED</Text></View>)}
       <Text style={styles.hint}>In tools ko chalane ke liye AI service aur secure server connection chahiye. Koi fake working button nahi rakha gaya.</Text>
     </ScrollView>}
