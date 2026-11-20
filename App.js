@@ -321,9 +321,10 @@ export default function App() {
         if(video.paused||video.ended)return;
         ctx.clearRect(0,0,canvas.width,canvas.height);
         const sx=(video.videoWidth-width)/2,sy=(video.videoHeight-height)/2;
+        ctx.filter=filter==="Mono"?"grayscale(1)":"none";
         ctx.drawImage(video,sx,sy,width,height,0,0,canvas.width,canvas.height);
+        ctx.filter="none";
         const tint=filter==="Warm"?"rgba(255,150,45,0.20)":filter==="Cool"?"rgba(55,145,255,0.20)":filter==="Mono"?"rgba(35,35,35,0.42)":filter==="Dream"?"rgba(190,110,255,0.17)":null;
-        if(filter==="Mono"){ctx.filter="grayscale(1)";ctx.drawImage(canvas,0,0);ctx.filter="none";}
         if(tint){ctx.fillStyle=tint;ctx.fillRect(0,0,canvas.width,canvas.height);}
         if(caption.trim()){
           const size=Math.max(22,Math.round(canvas.width*.05));
