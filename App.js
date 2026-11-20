@@ -61,6 +61,8 @@ export default function App() {
   const [volume,setVolume]=useState(100);
   const [trimStart,setTrimStart]=useState("0");
   const [trimEnd,setTrimEnd]=useState("");
+  const [brightness,setBrightness]=useState(0);
+  const [contrast,setContrast]=useState(0);
   const [musicTrack,setMusicTrack]=useState(null);
   const [musicSound,setMusicSound]=useState(null);
   const [musicPlaying,setMusicPlaying]=useState(false);
@@ -295,7 +297,7 @@ export default function App() {
 
   const saveProject=async()=>{
     if(!asset?.uri){Alert.alert("Media select karein","Pehle photo ya video choose karein.");return;}
-    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,captionSize,captionColor,captionPosition,musicTrack,musicVolume,trimStart,trimEnd,editorVersion:4},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
+    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,captionSize,captionColor,captionPosition,musicTrack,musicVolume,trimStart,trimEnd,brightness,contrast,editorVersion:5},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
     setBusy(true);
     try{
       const ext=(asset.fileName||asset.uri.split("?")[0]).split(".").pop()||(mediaKind==="image"?"jpg":"mp4");
@@ -331,6 +333,8 @@ export default function App() {
     setMusicVolume(Number(settings.musicVolume??70));
     setTrimStart(String(settings.trimStart??"0"));
     setTrimEnd(String(settings.trimEnd??""));
+    setBrightness(Number(settings.brightness??0));
+    setContrast(Number(settings.contrast??0));
     setCaption(settings.caption||"");
     setCaptionSize(Number(settings.captionSize||24));
     setCaptionColor(settings.captionColor||"#FFFFFF");
@@ -347,7 +351,7 @@ export default function App() {
     setCaptionSize(24);
     setCaptionColor("#FFFFFF");
     setCaptionPosition("Bottom");
-    setTrimStart("0");setTrimEnd("");
+    setTrimStart("0");setTrimEnd("");setBrightness(0);setContrast(0);
     Alert.alert("Edits reset","Filter, crop, text aur volume default par aa gaye.");
   };
 
@@ -419,10 +423,11 @@ export default function App() {
         const sourceHeight=Number(asset.height)||1080;
         const outputLongEdge=exportQuality==="2K"?2560:1920;
         const scale=outputLongEdge/Math.max(sourceWidth,sourceHeight);
-        const targetWidth=Math.max(2,Math.round((sourceWidth*scale)/2)*2);
-        const targetHeight=Math.max(2,Math.round((sourceHeight*scale)/2)*2);
+        const targetAspect=ratio==="1:1"?1:ratio==="4:5"?4/5:ratio==="9:16"?9/16:ratio==="16:9"?16/9:sourceWidth/sourceHeight;
+        const targetWidth=Math.max(2,Math.round(((targetAspect>=1?outputLongEdge:outputLongEdge*targetAspect))/2)*2);
+        const targetHeight=Math.max(2,Math.round(((targetAspect>=1?outputLongEdge/targetAspect:outputLongEdge))/2)*2);
         const outputPath=FileSystem.cacheDirectory+"clipora-"+Date.now()+".mp4";
-        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight,musicTrack?.uri||"",Math.max(0,Math.round(Number(trimStart||0)*1000)),trimEnd.trim()?Math.max(0,Math.round(Number(trimEnd)*1000)):-1);
+        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight,filter,ratio,brightness/100,contrast/100,musicTrack?.uri||"",Math.max(0,Math.round(Number(trimStart||0)*1000)),trimEnd.trim()?Math.max(0,Math.round(Number(trimEnd)*1000)):-1);
         const permission=await MediaLibrary.requestPermissionsAsync();
         if(!permission.granted)throw new Error("Gallery permission allow karein.");
         await MediaLibrary.createAssetAsync(outputUri);
@@ -588,7 +593,7 @@ export default function App() {
       {activeTool==="Text"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add text overlay</Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder="Yahan apna text likhein..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:76,textAlignVertical:"top"}]}/><Text style={styles.hint}>Text size</Text><View style={styles.chips}>{[18,24,30,36,44].map(n=><TouchableOpacity key={n} onPress={()=>setCaptionSize(n)} style={[styles.chip,captionSize===n&&styles.chipOn]}><Text style={styles.chipText}>{n}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text color</Text><View style={styles.chips}>{[["White","#FFFFFF"],["Yellow","#FFE45E"],["Cyan","#21D4FD"],["Pink","#FF69B4"],["Black","#111111"]].map(([name,color])=><TouchableOpacity key={name} onPress={()=>setCaptionColor(color)} style={[styles.chip,captionColor===color&&styles.chipOn,{backgroundColor:color}]}><Text style={[styles.chipText,{color:color==="#111111"?"#FFFFFF":"#111111"}]}>{name}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text position</Text><View style={styles.chips}>{["Top","Center","Bottom"].map(pos=><TouchableOpacity key={pos} onPress={()=>setCaptionPosition(pos)} style={[styles.chip,captionPosition===pos&&styles.chipOn]}><Text style={styles.chipText}>{pos}</Text></TouchableOpacity>)}</View></View>}
       {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add background music</Text><Text style={styles.hint}>Phone se MP3, M4A, WAV ya supported audio file import karein. Editor mein music preview chalegi.</Text><PrimaryButton title="＋ Add music from phone" onPress={chooseMusic}/>{musicTrack&&<><Text style={styles.projectTitle}>{musicTrack.name}</Text><View style={styles.chips}><TouchableOpacity onPress={toggleMusic} style={styles.chip}><Text style={styles.chipText}>{musicPlaying?"Ⅱ Pause music":"▶ Play music"}</Text></TouchableOpacity><TouchableOpacity onPress={removeMusic} style={styles.chip}><Text style={styles.chipText}>Remove track</Text></TouchableOpacity></View><Text style={styles.hint}>Music preview volume</Text><View style={styles.chips}>{[0,25,50,70,100].map(v=><TouchableOpacity key={v} onPress={async()=>{setMusicVolume(v);if(musicSound)await musicSound.setVolumeAsync(v/100).catch(()=>{});}} style={[styles.chip,musicVolume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View></>}</View>}
       {activeTool==="Trim"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Trim video (seconds)</Text><TextInput value={trimStart} onChangeText={setTrimStart} keyboardType="decimal-pad" placeholder="Start seconds (0)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={trimEnd} onChangeText={setTrimEnd} keyboardType="decimal-pad" placeholder="End seconds (blank = full length)" placeholderTextColor={COLORS.muted} style={styles.input}/><Text style={styles.hint}>Android MP4 export selected start/end time ko apply karega. End ko start se bara rakhein. Preview abhi full source video dikhata hai.</Text></View>}
-      {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Original video volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Original video audio ka preview volume set karein. Added music track ka volume Music tab mein set hota hai.</Text></View>}
+      {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Video brightness</Text><View style={styles.chips}>{[-50,-25,0,25,50].map(v=><TouchableOpacity key={v} onPress={()=>setBrightness(v)} style={[styles.chip,brightness===v&&styles.chipOn]}><Text style={styles.chipText}>{v>0?"+":""}{v}</Text></TouchableOpacity>)}</View><Text style={styles.panelTitle}>Video contrast</Text><View style={styles.chips}>{[-50,-25,0,25,50].map(v=><TouchableOpacity key={v} onPress={()=>setContrast(v)} style={[styles.chip,contrast===v&&styles.chipOn]}><Text style={styles.chipText}>{v>0?"+":""}{v}</Text></TouchableOpacity>)}</View><Text style={styles.panelTitle}>Original video volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Android MP4 export applies brightness, contrast, selected crop ratio and Mono/Noir filters. Volume setting is preview-only for now.</Text></View>}
       {mediaKind==="video"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Video export quality</Text><View style={styles.chips}><TouchableOpacity onPress={()=>chooseExportQuality("1080p")} style={[styles.chip,exportQuality==="1080p"&&styles.chipOn]}><Text style={styles.chipText}>1080p · Free</Text></TouchableOpacity><TouchableOpacity onPress={()=>chooseExportQuality("2K")} style={[styles.chip,exportQuality==="2K"&&styles.chipOn]}><Text style={styles.chipText}>{isPremium?"2K · Pro ✓":"🔒 2K · Upgrade"}</Text></TouchableOpacity></View><Text style={styles.hint}>{isPremium?"Pro active: 2K render output unlocked. Source video ki original detail se zyada detail create nahi hoti.":"2K export Pro members ke liye locked hai. Upgrade karein aur payment verify hone ke baad unlock hoga."}</Text></View>}
       <PrimaryButton title={busy?"Saving...":"Save Project"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
