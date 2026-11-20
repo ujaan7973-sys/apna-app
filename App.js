@@ -26,7 +26,7 @@ function VideoPreview({ uri }) {
 
 export default function App() {
   const [session,setSession]=useState(null);
-  const [authMode,setAuthMode]=useState("login");
+  const [authMode,setAuthMode]=useState("signup");
   const [email,setEmail]=useState("");
   const [password,setPassword]=useState("");
   const [otp,setOtp]=useState("");
@@ -153,9 +153,20 @@ export default function App() {
           : await supabase.auth.signInWithPassword({email:identifier.toLowerCase(),password});
       if(result.error) setAuthMessage(result.error.message==="Invalid login credentials"?"Email ya password match nahi hua. Forgot password dabakar naya password set karein.":result.error.message);
       else if(authMode==="signup"&&!result.data.session){
-        setOtpPending(phone);
-        setAuthMessage(phone?"SMS code bhej diya gaya hai. Code verify karein.":"Account request ho gayi. Email verify karke login karein.");
-      } else {setSession(result.data.session);setAuthMessage("Login successful.");}
+        if(phone){
+          setOtpPending(true);
+          setAuthMessage("SMS code bhej diya gaya hai. Code verify karein.");
+        } else {
+          setAuthMode("login");
+          setPassword("");
+          setAuthMessage("Account request ho gayi. Apna email inbox khol kar verification link confirm karein, phir Log in karein.");
+        }
+      } else {
+        setSession(result.data.session);
+        setScreen("Home");
+        setTab("Home");
+        setAuthMessage("Login successful.");
+      }
     }catch(e){setAuthMessage(e?.message||"Connection error.");}
     finally{setAuthBusy(false);}
   };
