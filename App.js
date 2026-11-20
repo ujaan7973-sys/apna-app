@@ -7,6 +7,7 @@ import {
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { createClient } from "@supabase/supabase-js";
 
@@ -16,7 +17,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: typeof localStorage !== "undefined" ? localStorage : undefined }
 });
 
-const FILTER_OVERLAYS = { Warm:"rgba(255,150,45,0.20)", Cool:"rgba(55,145,255,0.20)", Dream:"rgba(190,110,255,0.16)", Vintage:"rgba(180,120,65,0.18)", Sepia:"rgba(150,95,45,0.28)", Fade:"rgba(245,245,255,0.18)", Pink:"rgba(255,70,170,0.18)", Green:"rgba(30,190,125,0.16)", Bright:"rgba(255,245,180,0.13)", Noir:"rgba(10,10,10,0.28)" };
+const FILTER_OVERLAYS = { Mono:"rgba(35,35,35,0.42)", Noir:"rgba(8,8,8,0.48)", Sepia:"rgba(150,95,45,0.28)", Warm:"rgba(255,150,45,0.20)", Cool:"rgba(55,145,255,0.20)", Dream:"rgba(190,110,255,0.16)", Vintage:"rgba(180,120,65,0.18)", Sepia:"rgba(150,95,45,0.28)", Fade:"rgba(245,245,255,0.18)", Pink:"rgba(255,70,170,0.18)", Green:"rgba(30,190,125,0.16)", Bright:"rgba(255,245,180,0.13)", Noir:"rgba(10,10,10,0.28)" };
 const COLORS = { bg:"#090B16", panel:"#15182A", panel2:"#20243A", text:"#F7F7FF", muted:"#9BA2BD", cyan:"#21D4FD", pink:"#B721FF", purple:"#6C4BFF", line:"#2A2F49" };
 
 function PrimaryButton({ title, onPress, disabled=false }) {
@@ -53,6 +54,7 @@ export default function App() {
   const [ratio,setRatio]=useState("Original");
   const [volume,setVolume]=useState(100);
   const [projects,setProjects]=useState([]);
+  const [guestProjectsLoaded,setGuestProjectsLoaded]=useState(false);
   const [busy,setBusy]=useState(false);
   const [tab,setTab]=useState("Home");
   const [paymentPlan,setPaymentPlan]=useState("pro_monthly");
@@ -69,7 +71,8 @@ export default function App() {
     return ()=>{alive=false;sub.subscription.unsubscribe();};
   },[]);
 
-  useEffect(()=>{ if(session){loadProjects();loadPaymentRequests();loadProfile();} else {setProjects([]);setPaymentRequests([]);setProfile({full_name:"",username:"",bio:"",avatar_url:""});} },[session?.user?.id]);
+  useEffect(()=>{ if(session){loadProjects();loadPaymentRequests();loadProfile();} else {setPaymentRequests([]);setProfile({full_name:"",username:"",bio:"",avatar_url:""});AsyncStorage.getItem("clipora_guest_projects").then(raw=>{setProjects(raw?JSON.parse(raw):[]);setGuestProjectsLoaded(true);}).catch(()=>{setProjects([]);setGuestProjectsLoaded(true);});} },[session?.user?.id]);
+  useEffect(()=>{if(!session&&guestProjectsLoaded){AsyncStorage.setItem("clipora_guest_projects",JSON.stringify(projects)).catch(()=>{});}},[projects,session?.user?.id,guestProjectsLoaded]);
 
   const loadProfile=async()=>{
     if(!session?.user?.id)return;
@@ -477,8 +480,8 @@ export default function App() {
       <View style={{flexDirection:"row",gap:10,marginBottom:14}}><TouchableOpacity style={[styles.primaryButton,{flex:1,marginTop:0,padding:13}]} onPress={saveProject} disabled={busy||!asset}><Text style={styles.primaryText}>Save Project</Text></TouchableOpacity><TouchableOpacity style={[styles.primaryButton,{flex:1,marginTop:0,padding:13,backgroundColor:"#A52ACB"}]} onPress={mediaKind==="image"?exportPhoto:exportVideo} disabled={busy||!asset}><Text style={styles.primaryText}>{mediaKind==="image"?"Save Photo":"Export Video"}</Text></TouchableOpacity></View>
       <View ref={previewRef} collapsable={false} style={styles.previewFrame}>
         {asset?.uri&&(mediaKind==="image"?<Image source={{uri:asset.uri}} style={styles.preview} resizeMode="contain"/>:<VideoPreview uri={asset.uri}/>)}
-        {asset?.uri&&filter!=="Original"&&<View pointerEvents="none" style={[styles.filterPreviewOverlay,filter==="Warm"?styles.filterWarm:filter==="Cool"?styles.filterCool:filter==="Mono"?styles.filterMono:styles.filterDream]}/>}
-        {caption.trim().length>0&&<View style={styles.captionOverlay}><Text style={styles.captionOverlayText}>{caption}</Text></View>}
+        {asset?.uri&&filter!=="Original"&&<View pointerEvents="none" style={[styles.filterPreviewOverlay,{backgroundColor:FILTER_OVERLAYS[filter]||"transparent"}]}/>}
+        {caption.trim().length>0&&<View pointerEvents="none" style={[styles.captionOverlay,captionPosition==="Top"?{top:20,bottom:undefined}:captionPosition==="Center"?{top:"45%",bottom:undefined}:{bottom:25}]}><Text style={[styles.captionOverlayText,{color:captionColor,fontSize:captionSize}]}>{caption}</Text></View>}
         {!asset&&<Text style={styles.muted}>Select a photo or video to start</Text>}
       </View>
       <View style={styles.toolTabs}>{tools.map(t=><TouchableOpacity key={t} onPress={()=>setActiveTool(t)} style={[styles.toolTab,activeTool===t&&styles.toolTabActive]}><Text style={[styles.toolTabText,activeTool===t&&styles.toolTabTextActive]}>{t}</Text></TouchableOpacity>)}</View>
@@ -487,7 +490,7 @@ export default function App() {
       {activeTool==="Text"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add text overlay</Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder="Yahan apna text likhein..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:76,textAlignVertical:"top"}]}/><Text style={styles.hint}>Text size</Text><View style={styles.chips}>{[18,24,30,36,44].map(n=><TouchableOpacity key={n} onPress={()=>setCaptionSize(n)} style={[styles.chip,captionSize===n&&styles.chipOn]}><Text style={styles.chipText}>{n}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text color</Text><View style={styles.chips}>{[["White","#FFFFFF"],["Yellow","#FFE45E"],["Cyan","#21D4FD"],["Pink","#FF69B4"],["Black","#111111"]].map(([name,color])=><TouchableOpacity key={name} onPress={()=>setCaptionColor(color)} style={[styles.chip,captionColor===color&&styles.chipOn,{backgroundColor:color}]}><Text style={[styles.chipText,{color:color==="#111111"?"#FFFFFF":"#111111"}]}>{name}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text position</Text><View style={styles.chips}>{["Top","Center","Bottom"].map(pos=><TouchableOpacity key={pos} onPress={()=>setCaptionPosition(pos)} style={[styles.chip,captionPosition===pos&&styles.chipOn]}><Text style={styles.chipText}>{pos}</Text></TouchableOpacity>)}</View></View>}
       {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Music</Text><Text style={styles.hint}>Audio track import aur timeline mixing next stage mein add hogi. Is version mein audio export active nahi hai.</Text></View>}
       {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Volume setting project ke saath save hogi; final audio rendering abhi enabled nahi.</Text></View>}
-      <PrimaryButton title={busy?"Saving...":"Save project to cloud"} onPress={saveProject} disabled={busy||!asset}/>
+      <PrimaryButton title={busy?"Saving...":"Save Project"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
       {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":"Export edited video (WebM)"} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>Web export creates a WebM with crop, filter, text and original audio. Native Android video rendering, music-track mixing and MP4 export are not yet included.</Text></>}
       <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
