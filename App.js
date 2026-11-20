@@ -390,10 +390,10 @@ export default function App() {
           {!otpPending&&authMode==="login"&&<TouchableOpacity onPress={resetPassword}><Text style={styles.switchText}>Forgot password?</Text></TouchableOpacity>}
           {!otpPending&&<TouchableOpacity onPress={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}><Text style={styles.switchText}>{authMode==="login"?"New to Clipora? Create account":"Already registered? Log in"}</Text></TouchableOpacity>}
           {!otpPending&&Platform.OS==="web"&&<View style={{marginTop:16}}>
-            <PrimaryButton title="Continue with Google" onPress={()=>socialLogin("google")} disabled={authBusy}/>
-            <TouchableOpacity style={styles.secondaryButton} onPress={()=>socialLogin("facebook")}><Text style={styles.secondaryText}>Continue with Facebook</Text></TouchableOpacity>
+            <View style={[styles.secondaryButton,{opacity:.55}]}><Text style={styles.secondaryText}>Google login — Coming soon</Text></View>
+            <View style={[styles.secondaryButton,{opacity:.55}]}><Text style={styles.secondaryText}>Facebook login — Coming soon</Text></View>
           </View>}
-          <Text style={styles.hint}>Mobile OTP aur social login tabhi kaam karenge jab Supabase Auth mein SMS / Google / Facebook providers configure hon.</Text>
+          <Text style={styles.hint}>Filhal email aur password se account banayein ya login karein. Mobile OTP ke liye SMS provider, aur Google/Facebook login ke liye provider setup zaroori hai.</Text>
         </View>
         <Text style={styles.smallNote}>Your creative workspace, in your pocket.</Text>
       </View>
