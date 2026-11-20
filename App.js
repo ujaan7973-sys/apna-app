@@ -427,7 +427,7 @@ export default function App() {
         const targetWidth=Math.max(2,Math.round(((targetAspect>=1?outputLongEdge:outputLongEdge*targetAspect))/2)*2);
         const targetHeight=Math.max(2,Math.round(((targetAspect>=1?outputLongEdge/targetAspect:outputLongEdge))/2)*2);
         const outputPath=FileSystem.cacheDirectory+"clipora-"+Date.now()+".mp4";
-        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight,filter,ratio,brightness/100,contrast/100,musicTrack?.uri||"",Math.max(0,Math.round(Number(trimStart||0)*1000)),trimEnd.trim()?Math.max(0,Math.round(Number(trimEnd)*1000)):-1);
+        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight,filter,ratio,brightness/100,contrast/100,caption,captionColor,captionSize,captionPosition,musicTrack?.uri||"",Math.max(0,Math.round(Number(trimStart||0)*1000)),trimEnd.trim()?Math.max(0,Math.round(Number(trimEnd)*1000)):-1);
         const permission=await MediaLibrary.requestPermissionsAsync();
         if(!permission.granted)throw new Error("Gallery permission allow karein.");
         await MediaLibrary.createAssetAsync(outputUri);
