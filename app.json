@@ -10,6 +10,11 @@
     "android": {
       "package": "com.ashiqali.cliporaai",
       "versionCode": 1
+    },
+    "extra": {
+      "eas": {
+        "projectId": "5f22f825-8980-4e83-931e-447bc7cdbe1e"
+      }
     }
   }
 }
