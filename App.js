@@ -391,6 +391,7 @@ export default function App() {
     Alert.alert("Delete project?","Yeh project list se delete ho jayega.",[
       {text:"Cancel",style:"cancel"},
       {text:"Delete",style:"destructive",onPress:async()=>{
+        if(String(item.id).startsWith("local-")){setProjects(p=>p.filter(x=>x.id!==item.id));return;}
         const {error}=await supabase.from("clipora_projects").delete().eq("id",item.id);
         if(error)Alert.alert("Error",error.message);else loadProjects();
       }}
@@ -401,7 +402,7 @@ export default function App() {
   const filters=["Original","Warm","Cool","Mono","Dream"];
   const goHome=()=>{setScreen("Home");setAsset(null);};
 
-  if(recoveryMode){
+  if(false && recoveryMode){
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
   }
 
