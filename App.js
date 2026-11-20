@@ -5,6 +5,9 @@ import {
   StyleSheet, Alert, StatusBar, ActivityIndicator, Image, Platform, Dimensions
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as DocumentPicker from "expo-document-picker";
+import { Audio } from "expo-av";
+import { SvgXml } from "react-native-svg";
 import * as MediaLibrary from "expo-media-library";
 import { captureRef } from "react-native-view-shot";
 import AsyncStorage from "@react-native-async-storage/async-storage";
@@ -19,6 +22,7 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 const FILTER_OVERLAYS = { Mono:"rgba(35,35,35,0.42)", Noir:"rgba(8,8,8,0.48)", Sepia:"rgba(150,95,45,0.28)", Warm:"rgba(255,150,45,0.20)", Cool:"rgba(55,145,255,0.20)", Dream:"rgba(190,110,255,0.16)", Vintage:"rgba(180,120,65,0.18)", Sepia:"rgba(150,95,45,0.28)", Fade:"rgba(245,245,255,0.18)", Pink:"rgba(255,70,170,0.18)", Green:"rgba(30,190,125,0.16)", Bright:"rgba(255,245,180,0.13)", Noir:"rgba(10,10,10,0.28)" };
 const COLORS = { bg:"#090B16", panel:"#15182A", panel2:"#20243A", text:"#F7F7FF", muted:"#9BA2BD", cyan:"#21D4FD", pink:"#B721FF", purple:"#6C4BFF", line:"#2A2F49" };
+const CLIPORA_LOGO = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#21D4FD"/><stop offset=".55" stop-color="#6C4BFF"/><stop offset="1" stop-color="#FF4DB8"/></linearGradient><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#151A3B"/><stop offset="1" stop-color="#080B18"/></linearGradient></defs><rect x="16" y="16" width="480" height="480" rx="116" fill="url(#bg)" stroke="url(#g)" stroke-width="12"/><path d="M329 131a143 143 0 1 0 0 250" fill="none" stroke="url(#g)" stroke-width="52" stroke-linecap="round"/><path d="M225 183v146l126-73z" fill="url(#g)" stroke="#fff" stroke-opacity=".75" stroke-width="8" stroke-linejoin="round"/><path d="M367 91l14 27 30 6-22 21 4 30-26-15-27 15 5-30-22-21 30-6z" fill="#FFD45B"/><text x="256" y="448" font-family="Arial,sans-serif" font-size="47" font-weight="800" fill="#fff" text-anchor="middle">CLIPORA AI</text></svg>`;
 
 function PrimaryButton({ title, onPress, disabled=false }) {
   return <TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.primaryButton, disabled && {opacity:.5}]}><Text style={styles.primaryText}>{title}</Text></TouchableOpacity>;
@@ -53,6 +57,10 @@ export default function App() {
   const [filter,setFilter]=useState("Original");
   const [ratio,setRatio]=useState("Original");
   const [volume,setVolume]=useState(100);
+  const [musicTrack,setMusicTrack]=useState(null);
+  const [musicSound,setMusicSound]=useState(null);
+  const [musicPlaying,setMusicPlaying]=useState(false);
+  const [musicVolume,setMusicVolume]=useState(70);
   const [projects,setProjects]=useState([]);
   const [guestProjectsLoaded,setGuestProjectsLoaded]=useState(false);
   const [busy,setBusy]=useState(false);
@@ -226,6 +234,23 @@ export default function App() {
     finally{setAuthBusy(false);}
   };
 
+  const chooseMusic=async()=>{
+    try{
+      const result=await DocumentPicker.getDocumentAsync({type:"audio/*",copyToCacheDirectory:true});
+      if(result.canceled||!result.assets?.length)return;
+      if(musicSound){await musicSound.stopAsync().catch(()=>{});await musicSound.unloadAsync().catch(()=>{});}
+      const picked=result.assets[0];
+      const {sound}=await Audio.Sound.createAsync({uri:picked.uri},{shouldPlay:true,volume:musicVolume/100,isLooping:true});
+      sound.setOnPlaybackStatusUpdate(status=>{if(status.isLoaded)setMusicPlaying(!!status.isPlaying);});
+      setMusicSound(sound);setMusicTrack({uri:picked.uri,name:picked.name||"Music track"});setMusicPlaying(true);
+    }catch(e){Alert.alert("Music import failed",e?.message||"Audio file open nahi ho saki.");}
+  };
+  const toggleMusic=async()=>{
+    if(!musicSound){Alert.alert("Music","Pehle Add Music se audio file select karein.");return;}
+    try{const status=await musicSound.getStatusAsync();if(status.isLoaded){if(status.isPlaying)await musicSound.pauseAsync();else await musicSound.playAsync();}}catch(e){Alert.alert("Playback error",e?.message||"Music play nahi hui.");}
+  };
+  const removeMusic=async()=>{if(musicSound){await musicSound.stopAsync().catch(()=>{});await musicSound.unloadAsync().catch(()=>{});}setMusicSound(null);setMusicTrack(null);setMusicPlaying(false);};
+
   const chooseMedia=async(kind)=>{
     try{
       const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -245,7 +270,7 @@ export default function App() {
 
   const saveProject=async()=>{
     if(!asset?.uri){Alert.alert("Media select karein","Pehle photo ya video choose karein.");return;}
-    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,captionSize,captionColor,captionPosition,editorVersion:2},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
+    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,captionSize,captionColor,captionPosition,musicTrack,musicVolume,editorVersion:3},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
     setBusy(true);
     try{
       const ext=(asset.fileName||asset.uri.split("?")[0]).split(".").pop()||(mediaKind==="image"?"jpg":"mp4");
@@ -256,7 +281,7 @@ export default function App() {
       const {error:uploadError}=await supabase.storage.from("clipora-media").upload(path,body,{contentType,upsert:false});
       if(uploadError)throw uploadError;
       const {data:publicData}=supabase.storage.from("clipora-media").getPublicUrl(path);
-      const settings={filter,ratio,volume,caption,captionSize,captionColor,captionPosition,editorVersion:2};
+      const settings={filter,ratio,volume,caption,captionSize,captionColor,captionPosition,musicTrack,musicVolume,editorVersion:3};
       const {error:rowError}=await supabase.from("clipora_projects").insert({
         user_id:session.user.id,title:title.trim()||"Untitled project",
         media_type:mediaKind,media_path:path,media_url:publicData.publicUrl,settings
@@ -277,6 +302,8 @@ export default function App() {
     setFilter(settings.filter||"Original");
     setRatio(settings.ratio||"Original");
     setVolume(Number(settings.volume??100));
+    setMusicTrack(settings.musicTrack||null);
+    setMusicVolume(Number(settings.musicVolume??70));
     setCaption(settings.caption||"");
     setCaptionSize(Number(settings.captionSize||24));
     setCaptionColor(settings.captionColor||"#FFFFFF");
@@ -441,7 +468,7 @@ export default function App() {
   const previewBoxStyle=ratio==="9:16"?{width:Math.round(290*9/16),height:290,alignSelf:"center"}:ratio==="4:5"?{width:232,height:290,alignSelf:"center"}:ratio==="1:1"?{width:290,height:290,alignSelf:"center"}:ratio==="16:9"?{width:previewWidth,height:Math.round(previewWidth*9/16),alignSelf:"center"}:{};
 
   if(false && recoveryMode){
-    return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
+    return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><SvgXml xml={CLIPORA_LOGO} width={112} height={112} style={{alignSelf:"center",marginBottom:14}}/><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
   }
 
   if(false && !session){
@@ -474,7 +501,7 @@ export default function App() {
 
   return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
     <View style={styles.topbar}>
-      <TouchableOpacity onPress={goHome} style={styles.brandRow}><View style={styles.miniLogo}><Text style={styles.miniLogoText}>C</Text></View><Text style={styles.topBrand}>Clipora <Text style={styles.brandAI}>AI</Text></Text></TouchableOpacity>
+      <TouchableOpacity onPress={goHome} style={styles.brandRow}><SvgXml xml={CLIPORA_LOGO} width={42} height={42}/><Text style={styles.topBrand}>Clipora <Text style={styles.brandAI}>AI</Text></Text></TouchableOpacity>
       <TouchableOpacity onPress={()=>setScreen("Profile")}><Text style={styles.avatar}>{(session?.user?.email||session?.user?.phone||"G").slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
 
@@ -504,8 +531,8 @@ export default function App() {
       {activeTool==="Filters"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Choose a look</Text><View style={styles.chips}>{filters.map(f=><TouchableOpacity key={f} onPress={()=>setFilter(f)} style={[styles.chip,filter===f&&styles.chipOn]}><Text style={styles.chipText}>{f}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>12 filter presets. Selected look preview aur supported export par apply hota hai.</Text></View>}
       {activeTool==="Crop"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Aspect ratio</Text><View style={styles.chips}>{["Original","1:1","4:5","9:16","16:9"].map(x=><TouchableOpacity key={x} onPress={()=>setRatio(x)} style={[styles.chip,ratio===x&&styles.chipOn]}><Text style={styles.chipText}>{x}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Selected aspect ratio export crop par apply hota hai. Android photo save capture karta hai current preview; browser export applies crop.</Text></View>}
       {activeTool==="Text"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add text overlay</Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder="Yahan apna text likhein..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:76,textAlignVertical:"top"}]}/><Text style={styles.hint}>Text size</Text><View style={styles.chips}>{[18,24,30,36,44].map(n=><TouchableOpacity key={n} onPress={()=>setCaptionSize(n)} style={[styles.chip,captionSize===n&&styles.chipOn]}><Text style={styles.chipText}>{n}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text color</Text><View style={styles.chips}>{[["White","#FFFFFF"],["Yellow","#FFE45E"],["Cyan","#21D4FD"],["Pink","#FF69B4"],["Black","#111111"]].map(([name,color])=><TouchableOpacity key={name} onPress={()=>setCaptionColor(color)} style={[styles.chip,captionColor===color&&styles.chipOn,{backgroundColor:color}]}><Text style={[styles.chipText,{color:color==="#111111"?"#FFFFFF":"#111111"}]}>{name}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text position</Text><View style={styles.chips}>{["Top","Center","Bottom"].map(pos=><TouchableOpacity key={pos} onPress={()=>setCaptionPosition(pos)} style={[styles.chip,captionPosition===pos&&styles.chipOn]}><Text style={styles.chipText}>{pos}</Text></TouchableOpacity>)}</View></View>}
-      {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Music</Text><Text style={styles.hint}>Audio track import aur timeline mixing next stage mein add hogi. Is version mein audio export active nahi hai.</Text></View>}
-      {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Volume setting project ke saath save hogi; final audio rendering abhi enabled nahi.</Text></View>}
+      {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add background music</Text><Text style={styles.hint}>Phone se MP3, M4A, WAV ya supported audio file import karein. Editor mein music preview chalegi.</Text><PrimaryButton title="＋ Add music from phone" onPress={chooseMusic}/>{musicTrack&&<><Text style={styles.projectTitle}>{musicTrack.name}</Text><View style={styles.chips}><TouchableOpacity onPress={toggleMusic} style={styles.chip}><Text style={styles.chipText}>{musicPlaying?"Ⅱ Pause music":"▶ Play music"}</Text></TouchableOpacity><TouchableOpacity onPress={removeMusic} style={styles.chip}><Text style={styles.chipText}>Remove track</Text></TouchableOpacity></View><Text style={styles.hint}>Music volume</Text><View style={styles.chips}>{[0,25,50,70,100].map(v=><TouchableOpacity key={v} onPress={async()=>{setMusicVolume(v);if(musicSound)await musicSound.setVolumeAsync(v/100).catch(()=>{});}} style={[styles.chip,musicVolume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View></>}</View>}
+      {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Original video volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Original video audio ka preview volume set karein. Added music track ka volume Music tab mein set hota hai.</Text></View>}
       <PrimaryButton title={busy?"Saving...":"Save Project"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
       {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":"Export edited video (WebM)"} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>Web export creates a WebM with crop, filter, text and original audio. Native Android video rendering, music-track mixing and MP4 export are not yet included.</Text></>}
