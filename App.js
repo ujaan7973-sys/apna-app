@@ -33,6 +33,9 @@ export default function App() {
   const [otpPending,setOtpPending]=useState(false);
   const [authBusy,setAuthBusy]=useState(false);
   const [authMessage,setAuthMessage]=useState("");
+  const [recoveryMode,setRecoveryMode]=useState(false);
+  const [newPassword,setNewPassword]=useState("");
+  const [confirmPassword,setConfirmPassword]=useState("");
   const [screen,setScreen]=useState("Home");
   const [asset,setAsset]=useState(null);
   const [mediaKind,setMediaKind]=useState("image");
@@ -55,7 +58,7 @@ export default function App() {
   useEffect(()=>{
     let alive=true;
     supabase.auth.getSession().then(({data})=>{if(alive)setSession(data.session);});
-    const {data:sub}=supabase.auth.onAuthStateChange((_event,next)=>{if(alive)setSession(next);});
+    const {data:sub}=supabase.auth.onAuthStateChange((event,next)=>{if(alive){setSession(next);if(event==="PASSWORD_RECOVERY")setRecoveryMode(true);}});
     return ()=>{alive=false;sub.subscription.unsubscribe();};
   },[]);
 
@@ -148,7 +151,7 @@ export default function App() {
         : phone
           ? await supabase.auth.signInWithPassword({phone:normalizedPhone(identifier),password})
           : await supabase.auth.signInWithPassword({email:identifier.toLowerCase(),password});
-      if(result.error) setAuthMessage(result.error.message);
+      if(result.error) setAuthMessage(result.error.message==="Invalid login credentials"?"Email ya password match nahi hua. Forgot password dabakar naya password set karein.":result.error.message);
       else if(authMode==="signup"&&!result.data.session){
         setOtpPending(phone);
         setAuthMessage(phone?"SMS code bhej diya gaya hai. Code verify karein.":"Account request ho gayi. Email verify karke login karein.");
@@ -174,6 +177,18 @@ export default function App() {
       const {error}=await supabase.auth.signInWithOAuth({provider,options:{redirectTo:window.location.origin}});
       if(error)throw error;
     }catch(e){setAuthMessage(e?.message||provider+" login setup nahi hai. Supabase mein provider configure karein.");setAuthBusy(false);}
+  };
+  const saveNewPassword=async()=>{
+    if(newPassword.length<8){setAuthMessage("Naya password kam az kam 8 characters ka rakhein.");return;}
+    if(newPassword!==confirmPassword){setAuthMessage("Dono passwords match nahi karte.");return;}
+    setAuthBusy(true);setAuthMessage("");
+    try{
+      const {error}=await supabase.auth.updateUser({password:newPassword});
+      if(error)throw error;
+      setRecoveryMode(false);setNewPassword("");setConfirmPassword("");setPassword("");setAuthMessage("Password update ho gaya. Ab login karein.");
+      await supabase.auth.signOut();
+    }catch(e){setAuthMessage(e?.message||"Password update nahi hua. Naya reset link mangwayein.");}
+    finally{setAuthBusy(false);}
   };
   const resetPassword=async()=>{
     const value=email.trim();
@@ -371,6 +386,10 @@ export default function App() {
   const tools=["Filters","Crop","Text","Music","Adjust"];
   const filters=["Original","Warm","Cool","Mono","Dream"];
   const goHome=()=>{setScreen("Home");setAsset(null);};
+
+  if(recoveryMode){
+    return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
+  }
 
   if(!session){
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
