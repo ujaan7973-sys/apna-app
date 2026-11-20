@@ -70,6 +70,7 @@ export default function App() {
     if(!error&&data)setProfile({full_name:data.full_name||"",username:data.username||"",bio:data.bio||"",avatar_url:data.avatar_url||""});
   };
   const saveProfile=async()=>{
+    if(!session){Alert.alert("Profile saved","Guest profile is available on this device for this session.");return;}
     setProfileBusy(true);
     try{
       const username=profile.username.trim().replace(/[^a-zA-Z0-9_]/g,"").toLowerCase();
@@ -81,6 +82,7 @@ export default function App() {
     finally{setProfileBusy(false);}
   };
   const uploadAvatar=async()=>{
+    if(!session){const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();if(!permission.granted){Alert.alert("Permission","Gallery access allow karein.");return;}const picked=await ImagePicker.launchImageLibraryAsync({mediaTypes:["images"],allowsEditing:true,aspect:[1,1],quality:.85});if(!picked.canceled&&picked.assets?.length)setProfile(p=>({...p,avatar_url:picked.assets[0].uri}));return;}
     try{
       const permission=await ImagePicker.requestMediaLibraryPermissionsAsync();
       if(!permission.granted){Alert.alert("Permission","Gallery access allow karein.");return;}
@@ -106,6 +108,7 @@ export default function App() {
   };
 
   const submitPaymentRequest=async()=>{
+    if(!session){Alert.alert("Premium payment","JazzCash payment request bhejne ke liye account login feature abhi enabled nahi. App guest mode mein chal rahi hai.");return;}
     const reference=transactionReference.trim();
     if(reference.length<5){Alert.alert("Transaction ID required","JazzCash receipt par diya gaya transaction/reference ID likhein.");return;}
     setPaymentBusy(true);
@@ -231,8 +234,8 @@ export default function App() {
   };
 
   const saveProject=async()=>{
-    if(!session){Alert.alert("Login required","Project save karne ke liye login karein.");setScreen("Profile");return;}
     if(!asset?.uri){Alert.alert("Media select karein","Pehle photo ya video choose karein.");return;}
+    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,editorVersion:1},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
     setBusy(true);
     try{
       const ext=(asset.fileName||asset.uri.split("?")[0]).split(".").pop()||(mediaKind==="image"?"jpg":"mp4");
@@ -402,7 +405,7 @@ export default function App() {
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
   }
 
-  if(!session){
+  if(false && !session){
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
       <View style={styles.authWrap}>
         <View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View>
@@ -433,7 +436,7 @@ export default function App() {
   return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
     <View style={styles.topbar}>
       <TouchableOpacity onPress={goHome} style={styles.brandRow}><View style={styles.miniLogo}><Text style={styles.miniLogoText}>C</Text></View><Text style={styles.topBrand}>Clipora <Text style={styles.brandAI}>AI</Text></Text></TouchableOpacity>
-      <TouchableOpacity onPress={()=>setScreen("Profile")}><Text style={styles.avatar}>{(session.user.email||session.user.phone||"C").slice(0,1).toUpperCase()}</Text></TouchableOpacity>
+      <TouchableOpacity onPress={()=>setScreen("Profile")}><Text style={styles.avatar}>{(session?.user?.email||session?.user?.phone||"G").slice(0,1).toUpperCase()}</Text></TouchableOpacity>
     </View>
 
     {screen==="Home"&&<ScrollView contentContainerStyle={styles.page}>
@@ -510,7 +513,7 @@ export default function App() {
       {paymentRequests.length===0?<Text style={styles.empty}>Abhi koi payment request nahi.</Text>:paymentRequests.map(r=><View key={r.id} style={styles.projectRow}><View style={{flex:1}}><Text style={styles.projectTitle}>{r.plan_code==="pro_monthly"?"Pro Monthly":"Pro Yearly"} • Rs. {r.amount_pkr}</Text><Text style={styles.projectMeta}>Ref: {r.transaction_reference}</Text></View><Text style={styles.soon}>{r.status.toUpperCase()}</Text></View>)}
     </ScrollView>}
 
-    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><TouchableOpacity onPress={uploadAvatar} style={styles.profileCircle}>{profile.avatar_url?<Image source={{uri:profile.avatar_url}} style={{width:78,height:78,borderRadius:39}}/>:<Text style={styles.profileLetter}>{(session.user.email||session.user.phone||"C").slice(0,1).toUpperCase()}</Text>}</TouchableOpacity><Text style={styles.profileEmail}>{session.user.email||session.user.phone||"Clipora account"}</Text><Text style={styles.sub}>Tap profile photo to change it</Text><TextInput value={profile.full_name} onChangeText={v=>setProfile(p=>({...p,full_name:v}))} placeholder="Your full name" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.username} onChangeText={v=>setProfile(p=>({...p,username:v}))} autoCapitalize="none" placeholder="Username" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.bio} onChangeText={v=>setProfile(p=>({...p,bio:v}))} multiline placeholder="Write your bio..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:90,textAlignVertical:"top"}]}/><PrimaryButton title={profileBusy?"Saving...":"Save Profile"} onPress={saveProfile} disabled={profileBusy}/><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><TouchableOpacity style={styles.secondaryButton} onPress={async()=>{await supabase.auth.signOut();setSession(null);}}><Text style={styles.secondaryText}>Log out</Text></TouchableOpacity></ScrollView>}
+    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><TouchableOpacity onPress={uploadAvatar} style={styles.profileCircle}>{profile.avatar_url?<Image source={{uri:profile.avatar_url}} style={{width:78,height:78,borderRadius:39}}/>:<Text style={styles.profileLetter}>{(session?.user?.email||session?.user?.phone||"C").slice(0,1).toUpperCase()}</Text>}</TouchableOpacity><Text style={styles.profileEmail}>{session?.user?.email||session?.user?.phone||"Guest mode — no login"}</Text><Text style={styles.sub}>Tap profile photo to change it</Text><TextInput value={profile.full_name} onChangeText={v=>setProfile(p=>({...p,full_name:v}))} placeholder="Your full name" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.username} onChangeText={v=>setProfile(p=>({...p,username:v}))} autoCapitalize="none" placeholder="Username" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.bio} onChangeText={v=>setProfile(p=>({...p,bio:v}))} multiline placeholder="Write your bio..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:90,textAlignVertical:"top"}]}/><PrimaryButton title={profileBusy?"Saving...":"Save Profile"} onPress={saveProfile} disabled={profileBusy}/><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><Text style={styles.hint}>Guest mode: bina login ke editing use karein.</Text></ScrollView>}
 
     <View style={styles.bottomNav}>{[["Home","⌂"],["Projects","▤"],["AI","✦"],["Profile","●"]].map(([s,ic])=><TouchableOpacity key={s} onPress={()=>setScreen(s)} style={styles.navItem}><Text style={[styles.navIcon,screen===s&&styles.navActive]}>{ic}</Text><Text style={[styles.navText,screen===s&&styles.navActive]}>{s}</Text></TouchableOpacity>)}</View>
   </SafeAreaView>;
