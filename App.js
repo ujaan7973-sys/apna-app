@@ -411,11 +411,12 @@ export default function App() {
         const NativeRenderer=requireNativeModule("CliporaVideoRenderer");
         const sourceWidth=Number(asset.width)||1920;
         const sourceHeight=Number(asset.height)||1080;
-        const scale=2560/Math.max(sourceWidth,sourceHeight);
+        const outputLongEdge=exportQuality==="2K"?2560:1920;
+        const scale=outputLongEdge/Math.max(sourceWidth,sourceHeight);
         const targetWidth=Math.max(2,Math.round((sourceWidth*scale)/2)*2);
         const targetHeight=Math.max(2,Math.round((sourceHeight*scale)/2)*2);
-        const outputPath=(await import("expo-file-system/legacy")).cacheDirectory+"clipora-"+Date.now()+".mp4";
-        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,exportQuality==="2K"?targetWidth:sourceWidth,exportQuality==="2K"?targetHeight:sourceHeight);
+        const outputPath=FileSystem.cacheDirectory+"clipora-"+Date.now()+".mp4";
+        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight);
         const permission=await MediaLibrary.requestPermissionsAsync();
         if(!permission.granted)throw new Error("Gallery permission allow karein.");
         await MediaLibrary.createAssetAsync(outputUri);
