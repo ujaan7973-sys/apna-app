@@ -308,7 +308,7 @@ export default function App() {
       const {error:uploadError}=await supabase.storage.from("clipora-media").upload(path,body,{contentType,upsert:false});
       if(uploadError)throw uploadError;
       const {data:publicData}=supabase.storage.from("clipora-media").getPublicUrl(path);
-      const settings={filter,ratio,volume,caption,captionSize,captionColor,captionPosition,musicTrack,musicVolume,editorVersion:3};
+      const settings={filter,ratio,volume,caption,captionSize,captionColor,captionPosition,musicTrack,musicVolume,trimStart,trimEnd,brightness,contrast,editorVersion:5};
       const {error:rowError}=await supabase.from("clipora_projects").insert({
         user_id:session.user.id,title:title.trim()||"Untitled project",
         media_type:mediaKind,media_path:path,media_url:publicData.publicUrl,settings
