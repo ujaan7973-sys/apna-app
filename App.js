@@ -245,7 +245,7 @@ export default function App() {
 
   const saveProject=async()=>{
     if(!asset?.uri){Alert.alert("Media select karein","Pehle photo ya video choose karein.");return;}
-    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,editorVersion:1},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
+    if(!session){const localItem={id:"local-"+Date.now(),title:title.trim()||"Untitled project",media_type:mediaKind,media_url:asset.uri,settings:{filter,ratio,volume,caption,captionSize,captionColor,captionPosition,editorVersion:2},created_at:new Date().toISOString()};setProjects(p=>[localItem,...p]);setScreen("Projects");Alert.alert("Saved","Project is device session mein save ho gaya. Cloud sync ke liye account system baad mein add hoga.");return;}
     setBusy(true);
     try{
       const ext=(asset.fileName||asset.uri.split("?")[0]).split(".").pop()||(mediaKind==="image"?"jpg":"mp4");
@@ -256,7 +256,7 @@ export default function App() {
       const {error:uploadError}=await supabase.storage.from("clipora-media").upload(path,body,{contentType,upsert:false});
       if(uploadError)throw uploadError;
       const {data:publicData}=supabase.storage.from("clipora-media").getPublicUrl(path);
-      const settings={filter,ratio,volume,caption,editorVersion:1};
+      const settings={filter,ratio,volume,caption,captionSize,captionColor,captionPosition,editorVersion:2};
       const {error:rowError}=await supabase.from("clipora_projects").insert({
         user_id:session.user.id,title:title.trim()||"Untitled project",
         media_type:mediaKind,media_path:path,media_url:publicData.publicUrl,settings
@@ -278,6 +278,9 @@ export default function App() {
     setRatio(settings.ratio||"Original");
     setVolume(Number(settings.volume??100));
     setCaption(settings.caption||"");
+    setCaptionSize(Number(settings.captionSize||24));
+    setCaptionColor(settings.captionColor||"#FFFFFF");
+    setCaptionPosition(settings.captionPosition||"Bottom");
     setScreen("Editor");
     setActiveTool("Filters");
   };
@@ -307,7 +310,7 @@ export default function App() {
       const canvas=document.createElement("canvas");
       canvas.width=Math.max(1,Math.round(sw));canvas.height=Math.max(1,Math.round(sh));
       const ctx=canvas.getContext("2d");
-      ctx.filter=filter==="Mono"?"grayscale(1)":filter==="Noir"?"grayscale(1) contrast(1.25)":filter==="Sepia"?"sepia(1)":filter==="Vintage"?"sepia(.45) contrast(.92)":filter==="Fade"?"contrast(.85) brightness(1.08)":filter==="Bright"?"brightness(1.18) saturate(1.12)":"none";
+      ctx.filter=filter==="Mono"?"grayscale(1)":filter==="Noir"?"grayscale(1) contrast(1.25)":filter==="Sepia"?"sepia(1)":filter==="Vintage"?"sepia(.45) contrast(.92)":filter==="Fade"?"contrast(.85) brightness(1.08)":filter==="Bright"?"brightness(1.18) saturate(1.12)":filter==="Warm"?"sepia(.18) saturate(1.2) brightness(1.04)":filter==="Cool"?"saturate(1.08) hue-rotate(12deg)":filter==="Pink"?"saturate(1.2) hue-rotate(325deg)":filter==="Green"?"saturate(1.15) hue-rotate(35deg)":filter==="Dream"?"saturate(1.15) brightness(1.08)":"none";
       ctx.drawImage(img,sx,sy,sw,sh,0,0,canvas.width,canvas.height);
       ctx.filter="none";
       const tint=FILTER_OVERLAYS[filter]||null;
@@ -371,7 +374,7 @@ export default function App() {
         if(video.paused||video.ended)return;
         ctx.clearRect(0,0,canvas.width,canvas.height);
         const sx=(video.videoWidth-width)/2,sy=(video.videoHeight-height)/2;
-        ctx.filter=filter==="Mono"?"grayscale(1)":filter==="Noir"?"grayscale(1) contrast(1.25)":filter==="Sepia"?"sepia(1)":filter==="Vintage"?"sepia(.45) contrast(.92)":filter==="Fade"?"contrast(.85) brightness(1.08)":filter==="Bright"?"brightness(1.18) saturate(1.12)":"none";
+        ctx.filter=filter==="Mono"?"grayscale(1)":filter==="Noir"?"grayscale(1) contrast(1.25)":filter==="Sepia"?"sepia(1)":filter==="Vintage"?"sepia(.45) contrast(.92)":filter==="Fade"?"contrast(.85) brightness(1.08)":filter==="Bright"?"brightness(1.18) saturate(1.12)":filter==="Warm"?"sepia(.18) saturate(1.2) brightness(1.04)":filter==="Cool"?"saturate(1.08) hue-rotate(12deg)":filter==="Pink"?"saturate(1.2) hue-rotate(325deg)":filter==="Green"?"saturate(1.15) hue-rotate(35deg)":filter==="Dream"?"saturate(1.15) brightness(1.08)":"none";
         ctx.drawImage(video,sx,sy,width,height,0,0,canvas.width,canvas.height);
         ctx.filter="none";
         const tint=FILTER_OVERLAYS[filter]||null;
@@ -380,9 +383,9 @@ export default function App() {
           const size=Math.max(18,Math.round(captionSize*canvas.width/390));
           ctx.font="900 "+size+"px Arial";ctx.textAlign="center";ctx.textBaseline="bottom";
           ctx.lineWidth=Math.max(3,size*.12);ctx.strokeStyle="rgba(0,0,0,.85)";ctx.fillStyle=captionColor;
-          const textY=captionPosition==="Top"?size+20:captionPosition==="Center"?canvas.height/2:canvas.height-24;
-          ctx.strokeText(caption.trim(),canvas.width/2,textY,canvas.width*.9);
-          ctx.fillText(caption.trim(),canvas.width/2,textY,canvas.width*.9);
+          const lines=[];let line="";for(const word of caption.trim().split(/\\s+/)){const next=line?line+" "+word:word;if(ctx.measureText(next).width>canvas.width*.9&&line){lines.push(line);line=word;}else line=next;}if(line)lines.push(line);
+          const lineHeight=size*1.2;const startY=captionPosition==="Top"?size+20:captionPosition==="Center"?(canvas.height-(lines.length-1)*lineHeight)/2:canvas.height-24-(lines.length-1)*lineHeight;
+          lines.forEach((txt,i)=>{ctx.strokeText(txt,canvas.width/2,startY+i*lineHeight,canvas.width*.9);ctx.fillText(txt,canvas.width/2,startY+i*lineHeight,canvas.width*.9);});
         }
         requestAnimationFrame(draw);
       };
