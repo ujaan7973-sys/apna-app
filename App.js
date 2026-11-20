@@ -9,6 +9,7 @@ import * as DocumentPicker from "expo-document-picker";
 import { Audio } from "expo-av";
 import { SvgXml } from "react-native-svg";
 import * as MediaLibrary from "expo-media-library";
+import * as FileSystem from "expo-file-system/legacy";
 import { captureRef } from "react-native-view-shot";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { VideoView, useVideoPlayer } from "expo-video";
@@ -416,7 +417,7 @@ export default function App() {
         const targetWidth=Math.max(2,Math.round((sourceWidth*scale)/2)*2);
         const targetHeight=Math.max(2,Math.round((sourceHeight*scale)/2)*2);
         const outputPath=FileSystem.cacheDirectory+"clipora-"+Date.now()+".mp4";
-        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight);
+        const outputUri=await NativeRenderer.exportVideo(asset.uri,outputPath,targetWidth,targetHeight,musicTrack?.uri||"");
         const permission=await MediaLibrary.requestPermissionsAsync();
         if(!permission.granted)throw new Error("Gallery permission allow karein.");
         await MediaLibrary.createAssetAsync(outputUri);
