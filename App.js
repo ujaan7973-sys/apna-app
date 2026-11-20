@@ -632,7 +632,7 @@ export default function App() {
       </View>
       <Text style={styles.sectionTitle}>Quick tools</Text>
       <View style={styles.quickGrid}>{["AI Studio","Templates","My Projects","Profile","Premium"].map((x,i)=><TouchableOpacity key={x} style={styles.quickItem} onPress={()=>setScreen(x==="My Projects"?"Projects":x==="Profile"?"Profile":x==="Premium"?"Premium":"AI")}><Text style={styles.quickIcon}>{["✦","▦","▤","●","♛"][i]}</Text><Text style={styles.quickLabel}>{x}</Text></TouchableOpacity>)}</View>
-      <View style={styles.tipBox}><Text style={styles.tipTitle}>✨ Clipora AI Studio</Text><Text style={styles.tipText}>AI effects, auto captions aur background tools aglay stages mein connect honge. Abhi photo/video import aur project saving ka base tayyar hai.</Text></View>
+      <View style={styles.tipBox}><Text style={styles.tipTitle}>✨ Clipora AI Studio</Text><Text style={styles.tipText}>Photo editor ke AI Tools tab mein background remover aur object remover milenge. In services ko chalane ke liye required API keys configure honi chahiye.</Text></View>
     </ScrollView>}
 
     {screen==="Editor"&&<ScrollView contentContainerStyle={styles.page}>
@@ -677,8 +677,8 @@ export default function App() {
         {!!aiResult&&<View style={{marginTop:16}}><Text style={styles.panelTitle}>Your AI result</Text><Text selectable style={{color:COLORS.text,lineHeight:23}}>{aiResult}</Text><PrimaryButton title="Use as editor caption" onPress={()=>{setCaption(aiResult);setScreen("Editor");}}/><TouchableOpacity onPress={()=>{setAiPrompt(aiResult);}} style={styles.secondaryButton}><Text style={styles.secondaryText}>Use result as next prompt</Text></TouchableOpacity></View>}
       </View>
       <View style={styles.featureRow}><Text style={styles.featureStar}>✓</Text><Text style={styles.featureText}>AI captions, titles and hashtags</Text><Text style={styles.soon}>CONNECTED</Text></View>
-      <View style={styles.featureRow}><Text style={styles.featureStar}>＋</Text><Text style={styles.featureText}>Background removal, object removal and AI video rendering</Text><Text style={styles.soon}>NOT YET</Text></View>
-      <Text style={styles.hint}>AI text tools are connected. Photo background/object removal are available in the Photo Editor AI Tools tab after their server keys are configured.</Text>
+      <View style={styles.featureRow}><Text style={styles.featureStar}>＋</Text><Text style={styles.featureText}>Background remover and object remover</Text><Text style={styles.soon}>KEY SETUP</Text></View>
+      <Text style={styles.hint}>AI text tools are connected. Background removal needs REMOVE_BG_API_KEY; object removal uses GEMINI_API_KEY. AI video generation is not included in this release yet.</Text>
     </ScrollView>}
 
     
