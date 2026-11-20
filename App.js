@@ -2,7 +2,7 @@ import "react-native-url-polyfill/auto";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   SafeAreaView, View, Text, TextInput, TouchableOpacity, ScrollView,
-  StyleSheet, Alert, StatusBar, ActivityIndicator, Image, Platform
+  StyleSheet, Alert, StatusBar, ActivityIndicator, Image, Platform, Dimensions
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as MediaLibrary from "expo-media-library";
@@ -23,9 +23,9 @@ const COLORS = { bg:"#090B16", panel:"#15182A", panel2:"#20243A", text:"#F7F7FF"
 function PrimaryButton({ title, onPress, disabled=false }) {
   return <TouchableOpacity disabled={disabled} onPress={onPress} style={[styles.primaryButton, disabled && {opacity:.5}]}><Text style={styles.primaryText}>{title}</Text></TouchableOpacity>;
 }
-function VideoPreview({ uri }) {
+function VideoPreview({ uri, fit="contain" }) {
   const player = useVideoPlayer(uri, p => { p.loop = true; });
-  return <VideoView player={player} style={styles.preview} nativeControls contentFit="contain" />;
+  return <VideoView player={player} style={styles.preview} nativeControls contentFit={fit} />;
 }
 
 export default function App() {
@@ -423,6 +423,8 @@ export default function App() {
   const tools=["Filters","Crop","Text","Music","Adjust"];
   const filters=["Original","Warm","Cool","Mono","Dream","Vintage","Sepia","Fade","Pink","Noir","Bright","Green"];
   const goHome=()=>{setScreen("Home");setAsset(null);};
+  const previewWidth=Math.max(240,Math.min(340,Dimensions.get("window").width-40));
+  const previewBoxStyle=ratio==="9:16"?{width:Math.round(290*9/16),height:290,alignSelf:"center"}:ratio==="4:5"?{width:232,height:290,alignSelf:"center"}:ratio==="1:1"?{width:290,height:290,alignSelf:"center"}:ratio==="16:9"?{width:previewWidth,height:Math.round(previewWidth*9/16),alignSelf:"center"}:{};
 
   if(false && recoveryMode){
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
@@ -478,8 +480,8 @@ export default function App() {
       <View style={styles.rowBetween}><TouchableOpacity onPress={goHome}><Text style={styles.back}>‹ Back</Text></TouchableOpacity><Text style={styles.editorLabel}>{mediaKind==="image"?"PHOTO EDITOR":"VIDEO EDITOR"}</Text></View>
       <TextInput value={title} onChangeText={setTitle} style={styles.titleInput} placeholder="Project name" placeholderTextColor={COLORS.muted}/>
       <View style={{flexDirection:"row",gap:10,marginBottom:14}}><TouchableOpacity style={[styles.primaryButton,{flex:1,marginTop:0,padding:13}]} onPress={saveProject} disabled={busy||!asset}><Text style={styles.primaryText}>Save Project</Text></TouchableOpacity><TouchableOpacity style={[styles.primaryButton,{flex:1,marginTop:0,padding:13,backgroundColor:"#A52ACB"}]} onPress={mediaKind==="image"?exportPhoto:exportVideo} disabled={busy||!asset}><Text style={styles.primaryText}>{mediaKind==="image"?"Save Photo":"Export Video"}</Text></TouchableOpacity></View>
-      <View ref={previewRef} collapsable={false} style={styles.previewFrame}>
-        {asset?.uri&&(mediaKind==="image"?<Image source={{uri:asset.uri}} style={styles.preview} resizeMode="contain"/>:<VideoPreview uri={asset.uri}/>)}
+      <View ref={previewRef} collapsable={false} style={[styles.previewFrame,previewBoxStyle]}>
+        {asset?.uri&&(mediaKind==="image"?<Image source={{uri:asset.uri}} style={styles.preview} resizeMode={ratio==="Original"?"contain":"cover"}/>:<VideoPreview uri={asset.uri} fit={ratio==="Original"?"contain":"cover"}/>)}
         {asset?.uri&&filter!=="Original"&&<View pointerEvents="none" style={[styles.filterPreviewOverlay,{backgroundColor:FILTER_OVERLAYS[filter]||"transparent"}]}/>}
         {caption.trim().length>0&&<View pointerEvents="none" style={[styles.captionOverlay,captionPosition==="Top"?{top:20,bottom:undefined}:captionPosition==="Center"?{top:"45%",bottom:undefined}:{bottom:25}]}><Text style={[styles.captionOverlayText,{color:captionColor,fontSize:captionSize}]}>{caption}</Text></View>}
         {!asset&&<Text style={styles.muted}>Select a photo or video to start</Text>}
