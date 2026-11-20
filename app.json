@@ -2,6 +2,7 @@
   "expo": {
     "name": "Clipora AI",
     "slug": "clipora-ai",
+    "owner": "ashiqali2026",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
