@@ -75,6 +75,8 @@ export default function App() {
   const [aiTask,setAiTask]=useState("caption");
   const [aiResult,setAiResult]=useState("");
   const [aiBusy,setAiBusy]=useState(false);
+  const [exportQuality,setExportQuality]=useState("1080p");
+  const isPremium=paymentRequests.some(r=>["approved","verified","paid","active"].includes(String(r.status||"").toLowerCase()));
 
   useEffect(()=>{
     let alive=true;
@@ -394,6 +396,11 @@ export default function App() {
     }catch(e){Alert.alert("Export failed",e?.message||"Photo export nahi ho saka.");}
   };
 
+  const chooseExportQuality=(quality)=>{
+    if(quality==="2K"&&!isPremium){setPaymentPlan("pro_monthly");setScreen("Premium");Alert.alert("2K is a Pro feature","2K video export unlock karne ke liye Pro upgrade karein.");return;}
+    setExportQuality(quality);
+  };
+
   const exportVideo=async()=>{
     if(mediaKind!=="video"||!asset?.uri){Alert.alert("Video required","Pehle video select karein.");return;}
     if(Platform.OS!=="web"){Alert.alert("Export unavailable","Video export filhal web browser par available hai. Android native export ke liye alag rendering module aur APK build chahiye.");return;}
@@ -415,7 +422,8 @@ export default function App() {
       let width=video.videoWidth,height=video.videoHeight;
       if(sourceRatio>target)width=Math.round(height*target);else height=Math.round(width/target);
       const canvas=document.createElement("canvas");
-      canvas.width=Math.max(2,width);canvas.height=Math.max(2,height);
+      const outputScale=exportQuality==="2K"?(width>=height?Math.max(2560/width,1):Math.max(2560/height,1)):1;
+      canvas.width=Math.max(2,Math.round(width*outputScale));canvas.height=Math.max(2,Math.round(height*outputScale));
       const ctx=canvas.getContext("2d");
       canvasStream=canvas.captureStream(30);
       sourceStream=video.captureStream();
@@ -552,9 +560,10 @@ export default function App() {
       {activeTool==="Text"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add text overlay</Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder="Yahan apna text likhein..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:76,textAlignVertical:"top"}]}/><Text style={styles.hint}>Text size</Text><View style={styles.chips}>{[18,24,30,36,44].map(n=><TouchableOpacity key={n} onPress={()=>setCaptionSize(n)} style={[styles.chip,captionSize===n&&styles.chipOn]}><Text style={styles.chipText}>{n}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text color</Text><View style={styles.chips}>{[["White","#FFFFFF"],["Yellow","#FFE45E"],["Cyan","#21D4FD"],["Pink","#FF69B4"],["Black","#111111"]].map(([name,color])=><TouchableOpacity key={name} onPress={()=>setCaptionColor(color)} style={[styles.chip,captionColor===color&&styles.chipOn,{backgroundColor:color}]}><Text style={[styles.chipText,{color:color==="#111111"?"#FFFFFF":"#111111"}]}>{name}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text position</Text><View style={styles.chips}>{["Top","Center","Bottom"].map(pos=><TouchableOpacity key={pos} onPress={()=>setCaptionPosition(pos)} style={[styles.chip,captionPosition===pos&&styles.chipOn]}><Text style={styles.chipText}>{pos}</Text></TouchableOpacity>)}</View></View>}
       {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add background music</Text><Text style={styles.hint}>Phone se MP3, M4A, WAV ya supported audio file import karein. Editor mein music preview chalegi.</Text><PrimaryButton title="＋ Add music from phone" onPress={chooseMusic}/>{musicTrack&&<><Text style={styles.projectTitle}>{musicTrack.name}</Text><View style={styles.chips}><TouchableOpacity onPress={toggleMusic} style={styles.chip}><Text style={styles.chipText}>{musicPlaying?"Ⅱ Pause music":"▶ Play music"}</Text></TouchableOpacity><TouchableOpacity onPress={removeMusic} style={styles.chip}><Text style={styles.chipText}>Remove track</Text></TouchableOpacity></View><Text style={styles.hint}>Music volume</Text><View style={styles.chips}>{[0,25,50,70,100].map(v=><TouchableOpacity key={v} onPress={async()=>{setMusicVolume(v);if(musicSound)await musicSound.setVolumeAsync(v/100).catch(()=>{});}} style={[styles.chip,musicVolume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View></>}</View>}
       {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Original video volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Original video audio ka preview volume set karein. Added music track ka volume Music tab mein set hota hai.</Text></View>}
+      {mediaKind==="video"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Video export quality</Text><View style={styles.chips}><TouchableOpacity onPress={()=>chooseExportQuality("1080p")} style={[styles.chip,exportQuality==="1080p"&&styles.chipOn]}><Text style={styles.chipText}>1080p · Free</Text></TouchableOpacity><TouchableOpacity onPress={()=>chooseExportQuality("2K")} style={[styles.chip,exportQuality==="2K"&&styles.chipOn]}><Text style={styles.chipText}>{isPremium?"2K · Pro ✓":"🔒 2K · Upgrade"}</Text></TouchableOpacity></View><Text style={styles.hint}>{isPremium?"Pro active: 2K render output unlocked. Source video ki original detail se zyada detail create nahi hoti.":"2K export Pro members ke liye locked hai. Upgrade karein aur payment verify hone ke baad unlock hoga."}</Text></View>}
       <PrimaryButton title={busy?"Saving...":"Save Project"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
-      {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":"Export edited video (WebM)"} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>Web export creates a WebM with crop, filter, text and original audio. Native Android video rendering, music-track mixing and MP4 export are not yet included.</Text></>}
+      {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":`Export edited video (${exportQuality} WebM)`} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>2K rendering is currently supported in the web export path. Android native MP4 rendering and music-track mixing still require the native rendering engine.</Text></>}
       <TouchableOpacity onPress={resetEdits} style={styles.secondaryButton}><Text style={styles.secondaryText}>Reset all edits</Text></TouchableOpacity>
       <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
     </ScrollView>}
@@ -584,8 +593,8 @@ export default function App() {
       <Text style={styles.eyebrow}>SUPPORT THE CREATOR</Text><Text style={styles.heading}>Clipora Premium ✦</Text>
       <Text style={styles.sub}>Unlock more creative tools with a paid plan.</Text>
       <View style={styles.premiumCard}><Text style={styles.premiumBadge}>FREE</Text><Text style={styles.planTitle}>Free</Text><Text style={styles.planPrice}>Rs. 0</Text><Text style={styles.planFeature}>• Basic photo and video preview</Text><Text style={styles.planFeature}>• Limited cloud projects</Text></View>
-      <View style={[styles.premiumCard,styles.proCard]}><Text style={styles.premiumBadge}>MOST POPULAR</Text><Text style={styles.planTitle}>Pro Monthly</Text><Text style={styles.planPrice}>Rs. 499 <Text style={styles.planPeriod}>/ month</Text></Text><Text style={styles.planFeature}>• Premium templates and effects</Text><Text style={styles.planFeature}>• More cloud projects</Text><Text style={styles.planFeature}>• No-watermark export when export engine is available</Text><TouchableOpacity style={styles.primaryButton} onPress={()=>{setPaymentPlan("pro_monthly");setScreen("Payment");}}><Text style={styles.primaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
-      <View style={styles.premiumCard}><Text style={styles.premiumBadge}>YEARLY PLAN</Text><Text style={styles.planTitle}>Pro Yearly</Text><Text style={styles.planPrice}>Rs. 4,999 <Text style={styles.planPeriod}>/ year</Text></Text><Text style={styles.planFeature}>• All Pro features</Text><Text style={styles.planFeature}>• Annual plan</Text><TouchableOpacity style={styles.secondaryButton} onPress={()=>{setPaymentPlan("pro_yearly");setScreen("Payment");}}><Text style={styles.secondaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
+      <View style={[styles.premiumCard,styles.proCard]}><Text style={styles.premiumBadge}>MOST POPULAR</Text><Text style={styles.planTitle}>Pro Monthly</Text><Text style={styles.planPrice}>Rs. 499 <Text style={styles.planPeriod}>/ month</Text></Text><Text style={styles.planFeature}>• Premium templates and effects</Text><Text style={styles.planFeature}>• More cloud projects</Text><Text style={styles.planFeature}>• 2K video export (when supported by device/browser)</Text><Text style={styles.planFeature}>• No-watermark export when export engine is available</Text><TouchableOpacity style={styles.primaryButton} onPress={()=>{setPaymentPlan("pro_monthly");setScreen("Payment");}}><Text style={styles.primaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
+      <View style={styles.premiumCard}><Text style={styles.premiumBadge}>YEARLY PLAN</Text><Text style={styles.planTitle}>Pro Yearly</Text><Text style={styles.planPrice}>Rs. 4,999 <Text style={styles.planPeriod}>/ year</Text></Text><Text style={styles.planFeature}>• All Pro features, including 2K export</Text><Text style={styles.planFeature}>• Annual plan</Text><TouchableOpacity style={styles.secondaryButton} onPress={()=>{setPaymentPlan("pro_yearly");setScreen("Payment");}}><Text style={styles.secondaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
       <Text style={styles.hint}>Prices are proposed launch prices, not active charges. Payment gateway, receipts, refunds and verified subscription activation must be connected before accepting money.</Text>
     </ScrollView>}
 
