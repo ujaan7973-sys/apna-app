@@ -21,7 +21,7 @@ import { requireNativeModule } from "expo-modules-core";
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_wY74bjbP3xUyD07HuOdeZA_GuMoLtx3";
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, storage: typeof localStorage !== "undefined" ? localStorage : undefined }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: Platform.OS === "web", storage: AsyncStorage }
 });
 
 const FILTER_OVERLAYS = { Mono:"rgba(35,35,35,0.42)", Noir:"rgba(8,8,8,0.48)", Sepia:"rgba(150,95,45,0.28)", Warm:"rgba(255,150,45,0.20)", Cool:"rgba(55,145,255,0.20)", Dream:"rgba(190,110,255,0.16)", Vintage:"rgba(180,120,65,0.18)", Sepia:"rgba(150,95,45,0.28)", Fade:"rgba(245,245,255,0.18)", Pink:"rgba(255,70,170,0.18)", Green:"rgba(30,190,125,0.16)", Bright:"rgba(255,245,180,0.13)", Noir:"rgba(10,10,10,0.28)" };
@@ -92,7 +92,7 @@ export default function App() {
   useEffect(()=>{
     let alive=true;
     supabase.auth.getSession().then(({data})=>{if(alive)setSession(data.session);});
-    const {data:sub}=supabase.auth.onAuthStateChange((event,next)=>{if(alive){setSession(next);if(event==="PASSWORD_RECOVERY")setRecoveryMode(true);}});
+    const {data:sub}=supabase.auth.onAuthStateChange((event,next)=>{if(alive){setSession(next);if(event==="PASSWORD_RECOVERY")setRecoveryMode(true);if(next&&event==="SIGNED_IN"){setScreen("Home");setTab("Home");setAuthMessage("");}}});
     return ()=>{alive=false;sub.subscription.unsubscribe();};
   },[]);
 
@@ -289,7 +289,7 @@ export default function App() {
     setImageToolBusy(true);
     try{
       const info=await FileSystem.getInfoAsync(asset.uri);
-      if(info.exists&&info.size>12*1024*1024)throw new Error("Photo 12 MB se chhoti honi chahiye.");
+      if(info.exists&&info.size>8*1024*1024)throw new Error("Photo 8 MB se chhoti honi chahiye.");
       const imageBase64=await FileSystem.readAsStringAsync(asset.uri,{encoding:FileSystem.EncodingType.Base64});
       const {data,error}=await supabase.functions.invoke("clipora-image-tools",{body:{task,imageBase64,mimeType:asset.mimeType||"image/jpeg",prompt:imageToolPrompt.trim()}});
       if(error)throw error;
