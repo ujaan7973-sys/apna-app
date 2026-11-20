@@ -10,6 +10,7 @@ on:
       - 'app.json'
       - 'eas.json'
       - 'package.json'
+      - 'modules/**'
       - '.github/workflows/android-apk.yml'
 
 permissions:
