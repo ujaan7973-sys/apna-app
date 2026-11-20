@@ -588,7 +588,7 @@ export default function App() {
             : <PrimaryButton title={authBusy?"Please wait...":authMode==="login"?"Log in":"Create account"} onPress={signIn} disabled={authBusy}/>}
           {!otpPending&&authMode==="login"&&<TouchableOpacity onPress={resetPassword}><Text style={styles.switchText}>Forgot password?</Text></TouchableOpacity>}
           {!otpPending&&<TouchableOpacity onPress={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}><Text style={styles.switchText}>{authMode==="login"?"New to Clipora? Create account":"Already registered? Log in"}</Text></TouchableOpacity>}
-          {!otpPending&&Platform.OS==="web"&&<View style={{marginTop:16}}>
+          {!otpPending&&<View style={{marginTop:16}}>
             <TouchableOpacity style={styles.secondaryButton} onPress={()=>socialLogin("google")} disabled={authBusy}><Text style={styles.secondaryText}>Continue with Google</Text></TouchableOpacity>
             <TouchableOpacity style={styles.secondaryButton} onPress={()=>socialLogin("facebook")} disabled={authBusy}><Text style={styles.secondaryText}>Continue with Facebook</Text></TouchableOpacity>
           </View>}
