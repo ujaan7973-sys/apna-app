@@ -14,6 +14,7 @@ import { captureRef } from "react-native-view-shot";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { VideoView, useVideoPlayer } from "expo-video";
 import { createClient } from "@supabase/supabase-js";
+import * as WebBrowser from "expo-web-browser";
 import { requireNativeModule } from "expo-modules-core";
 
 const SUPABASE_URL = "https://yuukxqxsawawrtiahmkh.supabase.co";
@@ -81,6 +82,8 @@ export default function App() {
   const [aiTask,setAiTask]=useState("caption");
   const [aiResult,setAiResult]=useState("");
   const [aiBusy,setAiBusy]=useState(false);
+  const [imageToolBusy,setImageToolBusy]=useState(false);
+  const [imageToolPrompt,setImageToolPrompt]=useState("");
   const [exportQuality,setExportQuality]=useState("1080p");
   const isPremium=paymentRequests.some(r=>["approved","verified","paid","active"].includes(String(r.status||"").toLowerCase()));
 
@@ -215,12 +218,27 @@ export default function App() {
     finally{setAuthBusy(false);}
   };
   const socialLogin=async(provider)=>{
-    if(Platform.OS!=="web"){setAuthMessage("Google/Facebook login filhal web version par available hai.");return;}
     setAuthBusy(true);setAuthMessage("");
     try{
-      const {error}=await supabase.auth.signInWithOAuth({provider,options:{redirectTo:window.location.origin}});
+      const redirectTo=Platform.OS==="web"?window.location.origin:"cliporaai://auth/callback";
+      const {data,error}=await supabase.auth.signInWithOAuth({provider,options:{redirectTo,skipBrowserRedirect:Platform.OS!=="web"}});
       if(error)throw error;
-    }catch(e){setAuthMessage(e?.message||provider+" login setup nahi hai. Supabase mein provider configure karein.");setAuthBusy(false);}
+      if(Platform.OS!=="web"){
+        if(!data?.url)throw new Error("OAuth URL nahi mila. Supabase provider settings check karein.");
+        const result=await WebBrowser.openAuthSessionAsync(data.url,redirectTo);
+        if(result.type!=="success")throw new Error("Login cancel ya close ho gaya.");
+        const callback=new URL(result.url);
+        const code=callback.searchParams.get("code");
+        if(code){const {error:exchangeError}=await supabase.auth.exchangeCodeForSession(code);if(exchangeError)throw exchangeError;}
+        else {
+          const params=new URLSearchParams(callback.hash.replace(/^#/,""));
+          const access_token=params.get("access_token"),refresh_token=params.get("refresh_token");
+          if(!access_token||!refresh_token)throw new Error("OAuth callback token missing hai.");
+          const {error:sessionError}=await supabase.auth.setSession({access_token,refresh_token});if(sessionError)throw sessionError;
+        }
+      }
+    }catch(e){setAuthMessage(e?.message||provider+" login setup nahi hai. Supabase mein provider configure karein.");}
+    finally{setAuthBusy(false);}
   };
   const saveNewPassword=async()=>{
     if(newPassword.length<8){setAuthMessage("Naya password kam az kam 8 characters ka rakhein.");return;}
@@ -244,6 +262,28 @@ export default function App() {
       setAuthMessage("Password reset link aapke email par bhej diya gaya hai.");
     }catch(e){setAuthMessage(e?.message||"Reset link nahi bheja ja saka.");}
     finally{setAuthBusy(false);}
+  };
+
+  const runImageTool=async(task)=>{
+    if(!asset?.uri||mediaKind!=="image"){Alert.alert("Photo required","AI tools ke liye pehle photo select karein.");return;}
+    if(Platform.OS==="web"){Alert.alert("Android app required","AI image tools Android app mein run honge.");return;}
+    if(task==="remove_object"&&!imageToolPrompt.trim()){Alert.alert("Object ka naam likhein","Misal: remove the person in the background.");return;}
+    setImageToolBusy(true);
+    try{
+      const info=await FileSystem.getInfoAsync(asset.uri);
+      if(info.exists&&info.size>12*1024*1024)throw new Error("Photo 12 MB se chhoti honi chahiye.");
+      const imageBase64=await FileSystem.readAsStringAsync(asset.uri,{encoding:FileSystem.EncodingType.Base64});
+      const {data,error}=await supabase.functions.invoke("clipora-image-tools",{body:{task,imageBase64,mimeType:asset.mimeType||"image/jpeg",prompt:imageToolPrompt.trim()}});
+      if(error)throw error;
+      if(data?.error)throw new Error(data.error);
+      if(!data?.imageBase64)throw new Error("AI ne edited image return nahi ki.");
+      const outputUri=FileSystem.cacheDirectory+"clipora-ai-"+Date.now()+".png";
+      await FileSystem.writeAsStringAsync(outputUri,data.imageBase64,{encoding:FileSystem.EncodingType.Base64});
+      setAsset({...asset,uri:outputUri,fileName:"clipora-ai-edited.png",mimeType:"image/png"});
+      setFilter("Original");setRatio("Original");setCaption("");
+      Alert.alert("AI edit complete",task==="remove_background"?"Background remove ho gaya. PNG transparent background ke sath ready hai.":"AI object removal complete. Result check karein.");
+    }catch(e){Alert.alert("AI image tool",e?.message||"Image process nahi ho saki.");}
+    finally{setImageToolBusy(false);}
   };
 
   const generateAiContent=async()=>{
@@ -521,7 +561,7 @@ export default function App() {
     ]);
   };
 
-  const tools=["Filters","Crop","Text","Music","Adjust","Trim"];
+  const tools=["Filters","Crop","Text","Music","Adjust","Trim","AI Tools"];
   const filters=["Original","Warm","Cool","Mono","Dream","Vintage","Sepia","Fade","Pink","Noir","Bright","Green"];
   const goHome=()=>{setScreen("Home");setAsset(null);};
   const previewWidth=Math.max(240,Math.min(340,Dimensions.get("window").width-40));
@@ -531,7 +571,7 @@ export default function App() {
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><SvgXml xml={CLIPORA_LOGO} width={112} height={112} style={{alignSelf:"center",marginBottom:14}}/><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
   }
 
-  if(false && !session){
+  if(!session && screen==="Auth"){
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/>
       <View style={styles.authWrap}>
         <View style={styles.logoMark}><Text style={styles.logoC}>C</Text><Text style={styles.logoPlay}>▶</Text></View>
@@ -549,8 +589,8 @@ export default function App() {
           {!otpPending&&authMode==="login"&&<TouchableOpacity onPress={resetPassword}><Text style={styles.switchText}>Forgot password?</Text></TouchableOpacity>}
           {!otpPending&&<TouchableOpacity onPress={()=>{setAuthMode(authMode==="login"?"signup":"login");setAuthMessage("");}}><Text style={styles.switchText}>{authMode==="login"?"New to Clipora? Create account":"Already registered? Log in"}</Text></TouchableOpacity>}
           {!otpPending&&Platform.OS==="web"&&<View style={{marginTop:16}}>
-            <View style={[styles.secondaryButton,{opacity:.55}]}><Text style={styles.secondaryText}>Google login — Coming soon</Text></View>
-            <View style={[styles.secondaryButton,{opacity:.55}]}><Text style={styles.secondaryText}>Facebook login — Coming soon</Text></View>
+            <TouchableOpacity style={styles.secondaryButton} onPress={()=>socialLogin("google")} disabled={authBusy}><Text style={styles.secondaryText}>Continue with Google</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.secondaryButton} onPress={()=>socialLogin("facebook")} disabled={authBusy}><Text style={styles.secondaryText}>Continue with Facebook</Text></TouchableOpacity>
           </View>}
           <Text style={styles.hint}>Filhal email aur password se account banayein ya login karein. Mobile OTP ke liye SMS provider, aur Google/Facebook login ke liye provider setup zaroori hai.</Text>
         </View>
@@ -592,6 +632,7 @@ export default function App() {
       {activeTool==="Crop"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Aspect ratio</Text><View style={styles.chips}>{["Original","1:1","4:5","9:16","16:9"].map(x=><TouchableOpacity key={x} onPress={()=>setRatio(x)} style={[styles.chip,ratio===x&&styles.chipOn]}><Text style={styles.chipText}>{x}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Selected aspect ratio export crop par apply hota hai. Android photo save capture karta hai current preview; browser export applies crop.</Text></View>}
       {activeTool==="Text"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add text overlay</Text><TextInput value={caption} onChangeText={setCaption} multiline placeholder="Yahan apna text likhein..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:76,textAlignVertical:"top"}]}/><Text style={styles.hint}>Text size</Text><View style={styles.chips}>{[18,24,30,36,44].map(n=><TouchableOpacity key={n} onPress={()=>setCaptionSize(n)} style={[styles.chip,captionSize===n&&styles.chipOn]}><Text style={styles.chipText}>{n}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text color</Text><View style={styles.chips}>{[["White","#FFFFFF"],["Yellow","#FFE45E"],["Cyan","#21D4FD"],["Pink","#FF69B4"],["Black","#111111"]].map(([name,color])=><TouchableOpacity key={name} onPress={()=>setCaptionColor(color)} style={[styles.chip,captionColor===color&&styles.chipOn,{backgroundColor:color}]}><Text style={[styles.chipText,{color:color==="#111111"?"#FFFFFF":"#111111"}]}>{name}</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Text position</Text><View style={styles.chips}>{["Top","Center","Bottom"].map(pos=><TouchableOpacity key={pos} onPress={()=>setCaptionPosition(pos)} style={[styles.chip,captionPosition===pos&&styles.chipOn]}><Text style={styles.chipText}>{pos}</Text></TouchableOpacity>)}</View></View>}
       {activeTool==="Music"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Add background music</Text><Text style={styles.hint}>Phone se MP3, M4A, WAV ya supported audio file import karein. Editor mein music preview chalegi.</Text><PrimaryButton title="＋ Add music from phone" onPress={chooseMusic}/>{musicTrack&&<><Text style={styles.projectTitle}>{musicTrack.name}</Text><View style={styles.chips}><TouchableOpacity onPress={toggleMusic} style={styles.chip}><Text style={styles.chipText}>{musicPlaying?"Ⅱ Pause music":"▶ Play music"}</Text></TouchableOpacity><TouchableOpacity onPress={removeMusic} style={styles.chip}><Text style={styles.chipText}>Remove track</Text></TouchableOpacity></View><Text style={styles.hint}>Music preview volume</Text><View style={styles.chips}>{[0,25,50,70,100].map(v=><TouchableOpacity key={v} onPress={async()=>{setMusicVolume(v);if(musicSound)await musicSound.setVolumeAsync(v/100).catch(()=>{});}} style={[styles.chip,musicVolume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View></>}</View>}
+      {activeTool==="AI Tools"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>AI Photo Tools</Text><Text style={styles.hint}>Background removal aur object removal sirf photo par apply honge. Original photo ko safe rakhne ke liye result nayi file mein banega.</Text><PrimaryButton title={imageToolBusy?"Processing...":"✦ Remove Background (PNG)"} onPress={()=>runImageTool("remove_background")} disabled={imageToolBusy||mediaKind!=="image"}/><Text style={styles.panelTitle}>Remove an unwanted object</Text><TextInput value={imageToolPrompt} onChangeText={setImageToolPrompt} placeholder="Misal: remove the person on the left" placeholderTextColor={COLORS.muted} style={styles.input}/><PrimaryButton title={imageToolBusy?"Processing...":"✦ Remove Object with AI"} onPress={()=>runImageTool("remove_object")} disabled={imageToolBusy||mediaKind!=="image"}/>{imageToolBusy&&<ActivityIndicator color={COLORS.cyan} style={{marginTop:12}}/>}<Text style={styles.hint}>Background removal requires REMOVE_BG_API_KEY in Supabase secrets. Object removal uses the Gemini image model and GEMINI_API_KEY. No key is stored in the app.</Text></View>}
       {activeTool==="Trim"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Trim video (seconds)</Text><TextInput value={trimStart} onChangeText={setTrimStart} keyboardType="decimal-pad" placeholder="Start seconds (0)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={trimEnd} onChangeText={setTrimEnd} keyboardType="decimal-pad" placeholder="End seconds (blank = full length)" placeholderTextColor={COLORS.muted} style={styles.input}/><Text style={styles.hint}>Android MP4 export selected start/end time ko apply karega. End ko start se bara rakhein. Preview abhi full source video dikhata hai.</Text></View>}
       {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Video brightness</Text><View style={styles.chips}>{[-50,-25,0,25,50].map(v=><TouchableOpacity key={v} onPress={()=>setBrightness(v)} style={[styles.chip,brightness===v&&styles.chipOn]}><Text style={styles.chipText}>{v>0?"+":""}{v}</Text></TouchableOpacity>)}</View><Text style={styles.panelTitle}>Video contrast</Text><View style={styles.chips}>{[-50,-25,0,25,50].map(v=><TouchableOpacity key={v} onPress={()=>setContrast(v)} style={[styles.chip,contrast===v&&styles.chipOn]}><Text style={styles.chipText}>{v>0?"+":""}{v}</Text></TouchableOpacity>)}</View><Text style={styles.panelTitle}>Original video volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Android MP4 export applies brightness, contrast, selected crop ratio and Mono/Noir filters. Volume setting is preview-only for now.</Text></View>}
       {mediaKind==="video"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Video export quality</Text><View style={styles.chips}><TouchableOpacity onPress={()=>chooseExportQuality("1080p")} style={[styles.chip,exportQuality==="1080p"&&styles.chipOn]}><Text style={styles.chipText}>1080p · Free</Text></TouchableOpacity><TouchableOpacity onPress={()=>chooseExportQuality("2K")} style={[styles.chip,exportQuality==="2K"&&styles.chipOn]}><Text style={styles.chipText}>{isPremium?"2K · Pro ✓":"🔒 2K · Upgrade"}</Text></TouchableOpacity></View><Text style={styles.hint}>{isPremium?"Pro active: 2K render output unlocked. Source video ki original detail se zyada detail create nahi hoti.":"2K export Pro members ke liye locked hai. Upgrade karein aur payment verify hone ke baad unlock hoga."}</Text></View>}
@@ -619,7 +660,7 @@ export default function App() {
       </View>
       <View style={styles.featureRow}><Text style={styles.featureStar}>✓</Text><Text style={styles.featureText}>AI captions, titles and hashtags</Text><Text style={styles.soon}>CONNECTED</Text></View>
       <View style={styles.featureRow}><Text style={styles.featureStar}>＋</Text><Text style={styles.featureText}>Background removal, object removal and AI video rendering</Text><Text style={styles.soon}>NOT YET</Text></View>
-      <Text style={styles.hint}>AI text generation works through your secure Supabase Edge Function. Image/video AI editing needs separate image/video processing services; they are not falsely shown as working.</Text>
+      <Text style={styles.hint}>AI text tools are connected. Photo background/object removal are available in the Photo Editor AI Tools tab after their server keys are configured.</Text>
     </ScrollView>}
 
     
@@ -629,7 +670,7 @@ export default function App() {
       <View style={styles.premiumCard}><Text style={styles.premiumBadge}>FREE</Text><Text style={styles.planTitle}>Free</Text><Text style={styles.planPrice}>Rs. 0</Text><Text style={styles.planFeature}>• Basic photo and video preview</Text><Text style={styles.planFeature}>• Limited cloud projects</Text></View>
       <View style={[styles.premiumCard,styles.proCard]}><Text style={styles.premiumBadge}>MOST POPULAR</Text><Text style={styles.planTitle}>Pro Monthly</Text><Text style={styles.planPrice}>Rs. 499 <Text style={styles.planPeriod}>/ month</Text></Text><Text style={styles.planFeature}>• Premium templates and effects</Text><Text style={styles.planFeature}>• More cloud projects</Text><Text style={styles.planFeature}>• 2K video export (when supported by device/browser)</Text><Text style={styles.planFeature}>• No-watermark export when export engine is available</Text><TouchableOpacity style={styles.primaryButton} onPress={()=>{setPaymentPlan("pro_monthly");setScreen("Payment");}}><Text style={styles.primaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
       <View style={styles.premiumCard}><Text style={styles.premiumBadge}>YEARLY PLAN</Text><Text style={styles.planTitle}>Pro Yearly</Text><Text style={styles.planPrice}>Rs. 4,999 <Text style={styles.planPeriod}>/ year</Text></Text><Text style={styles.planFeature}>• All Pro features, including 2K export</Text><Text style={styles.planFeature}>• Annual plan</Text><TouchableOpacity style={styles.secondaryButton} onPress={()=>{setPaymentPlan("pro_yearly");setScreen("Payment");}}><Text style={styles.secondaryText}>Continue with JazzCash</Text></TouchableOpacity></View>
-      <Text style={styles.hint}>Prices are proposed launch prices, not active charges. Payment gateway, receipts, refunds and verified subscription activation must be connected before accepting money.</Text>
+      <Text style={styles.hint}>JazzCash Till transfer is manual verification only. Live gateway checkout cannot be enabled until JazzCash issues the official Merchant ID, Password and Integrity Salt. Do not send money until merchant name is verified.</Text>
     </ScrollView>}
 
     {screen==="Payment"&&<ScrollView contentContainerStyle={styles.page}>
@@ -652,7 +693,7 @@ export default function App() {
       {paymentRequests.length===0?<Text style={styles.empty}>Abhi koi payment request nahi.</Text>:paymentRequests.map(r=><View key={r.id} style={styles.projectRow}><View style={{flex:1}}><Text style={styles.projectTitle}>{r.plan_code==="pro_monthly"?"Pro Monthly":"Pro Yearly"} • Rs. {r.amount_pkr}</Text><Text style={styles.projectMeta}>Ref: {r.transaction_reference}</Text></View><Text style={styles.soon}>{r.status.toUpperCase()}</Text></View>)}
     </ScrollView>}
 
-    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text><TouchableOpacity onPress={uploadAvatar} style={styles.profileCircle}>{profile.avatar_url?<Image source={{uri:profile.avatar_url}} style={{width:78,height:78,borderRadius:39}}/>:<Text style={styles.profileLetter}>{(session?.user?.email||session?.user?.phone||"C").slice(0,1).toUpperCase()}</Text>}</TouchableOpacity><Text style={styles.profileEmail}>{session?.user?.email||session?.user?.phone||"Guest mode — no login"}</Text><Text style={styles.sub}>Tap profile photo to change it</Text><TextInput value={profile.full_name} onChangeText={v=>setProfile(p=>({...p,full_name:v}))} placeholder="Your full name" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.username} onChangeText={v=>setProfile(p=>({...p,username:v}))} autoCapitalize="none" placeholder="Username" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.bio} onChangeText={v=>setProfile(p=>({...p,bio:v}))} multiline placeholder="Write your bio..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:90,textAlignVertical:"top"}]}/><PrimaryButton title={profileBusy?"Saving...":"Save Profile"} onPress={saveProfile} disabled={profileBusy}/><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><Text style={styles.hint}>Guest mode: bina login ke editing use karein.</Text></ScrollView>}
+    {screen==="Profile"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.heading}>Your account</Text>{!session&&<PrimaryButton title="Log in / Create account" onPress={()=>setScreen("Auth")}/> }<TouchableOpacity onPress={uploadAvatar} style={styles.profileCircle}>{profile.avatar_url?<Image source={{uri:profile.avatar_url}} style={{width:78,height:78,borderRadius:39}}/>:<Text style={styles.profileLetter}>{(session?.user?.email||session?.user?.phone||"C").slice(0,1).toUpperCase()}</Text>}</TouchableOpacity><Text style={styles.profileEmail}>{session?.user?.email||session?.user?.phone||"Guest mode — no login"}</Text><Text style={styles.sub}>Tap profile photo to change it</Text><TextInput value={profile.full_name} onChangeText={v=>setProfile(p=>({...p,full_name:v}))} placeholder="Your full name" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.username} onChangeText={v=>setProfile(p=>({...p,username:v}))} autoCapitalize="none" placeholder="Username" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={profile.bio} onChangeText={v=>setProfile(p=>({...p,bio:v}))} multiline placeholder="Write your bio..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:90,textAlignVertical:"top"}]}/><PrimaryButton title={profileBusy?"Saving...":"Save Profile"} onPress={saveProfile} disabled={profileBusy}/><PrimaryButton title="My Projects" onPress={()=>setScreen("Projects")}/><Text style={styles.hint}>Guest mode: bina login ke editing use karein.</Text></ScrollView>}
 
     <View style={styles.bottomNav}>{[["Home","⌂"],["Projects","▤"],["AI","✦"],["Profile","●"]].map(([s,ic])=><TouchableOpacity key={s} onPress={()=>setScreen(s)} style={styles.navItem}><Text style={[styles.navIcon,screen===s&&styles.navActive]}>{ic}</Text><Text style={[styles.navText,screen===s&&styles.navActive]}>{s}</Text></TouchableOpacity>)}</View>
   </SafeAreaView>;
