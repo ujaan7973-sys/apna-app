@@ -164,17 +164,13 @@ class CliporaVideoRendererModule : Module() {
           .build()
 
         if (musicUri.isNotBlank()) {
-          // Use the Media3 1.6-compatible sequence builder APIs.
-          val videoSequence = EditedMediaItemSequence.Builder(listOf(videoItem))
-            .experimentalSetForceAudioTrack(true)
-            .experimentalSetForceVideoTrack(true)
-            .build()
+          // Media3 1.6 provides factory methods for track-specific sequences.
+          val videoSequence = EditedMediaItemSequence.withAudioAndVideoFrom(listOf(videoItem))
           val musicItem = EditedMediaItem.Builder(
             MediaItem.fromUri(Uri.parse(musicUri))
           ).setRemoveVideo(true).build()
-          val musicSequence = EditedMediaItemSequence.Builder(listOf(musicItem))
-            .experimentalSetForceAudioTrack(true)
-            .experimentalSetForceVideoTrack(false)
+          val musicSequence = EditedMediaItemSequence.withAudioFrom(listOf(musicItem))
+            .buildUpon()
             .setIsLooping(true)
             .build()
           val composition = Composition.Builder(listOf(videoSequence, musicSequence)).build()
