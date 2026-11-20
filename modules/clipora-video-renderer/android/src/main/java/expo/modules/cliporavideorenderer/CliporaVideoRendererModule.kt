@@ -114,7 +114,7 @@ class CliporaVideoRendererModule : Module() {
             .buildUpon()
             .setIsLooping(true)
             .build()
-          val composition = Composition.Builder(videoSequence, musicSequence).build()
+          val composition = Composition.Builder(listOf(videoSequence, musicSequence)).build()
           transformer.start(composition, outputFile.absolutePath)
         } else {
           transformer.start(videoItem, outputFile.absolutePath)
