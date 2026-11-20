@@ -284,6 +284,79 @@ export default function App() {
     }catch(e){Alert.alert("Export failed",e?.message||"Photo export nahi ho saka.");}
   };
 
+  const exportVideo=async()=>{
+    if(mediaKind!=="video"||!asset?.uri){Alert.alert("Video required","Pehle video select karein.");return;}
+    if(Platform.OS!=="web"){Alert.alert("Export unavailable","Video export filhal web browser par available hai. Android native export ke liye alag rendering module aur APK build chahiye.");return;}
+    if(typeof MediaRecorder==="undefined"){Alert.alert("Browser unsupported","Is browser mein video export supported nahi. Chrome ka latest version try karein.");return;}
+    setBusy(true);
+    let recorder, video, canvasStream, sourceStream;
+    try{
+      video=document.createElement("video");
+      video.src=asset.uri;
+      video.playsInline=true;
+      video.muted=false;
+      video.volume=Math.max(0,Math.min(1,volume/100));
+      video.preload="auto";
+      await new Promise((resolve,reject)=>{video.onloadedmetadata=resolve;video.onerror=()=>reject(new Error("Video load nahi ho saki."));});
+      if(!video.captureStream)throw new Error("Browser original video audio stream export support nahi karta.");
+      const ratios={"1:1":1,"4:5":4/5,"9:16":9/16,"16:9":16/9};
+      const target=ratios[ratio]||video.videoWidth/video.videoHeight;
+      const sourceRatio=video.videoWidth/video.videoHeight;
+      let width=video.videoWidth,height=video.videoHeight;
+      if(sourceRatio>target)width=Math.round(height*target);else height=Math.round(width/target);
+      const canvas=document.createElement("canvas");
+      canvas.width=Math.max(2,width);canvas.height=Math.max(2,height);
+      const ctx=canvas.getContext("2d");
+      canvasStream=canvas.captureStream(30);
+      sourceStream=video.captureStream();
+      const tracks=[...canvasStream.getVideoTracks(),...sourceStream.getAudioTracks()];
+      const stream=new MediaStream(tracks);
+      const mime=["video/webm;codecs=vp9,opus","video/webm;codecs=vp8,opus","video/webm"].find(x=>MediaRecorder.isTypeSupported(x));
+      if(!mime)throw new Error("Is browser mein supported WebM encoder nahi mila.");
+      const chunks=[];
+      recorder=new MediaRecorder(stream,{mimeType:mime});
+      recorder.ondataavailable=e=>{if(e.data&&e.data.size)chunks.push(e.data);};
+      const finished=new Promise((resolve,reject)=>{recorder.onstop=resolve;recorder.onerror=()=>reject(new Error("Video recording fail ho gayi."));});
+      const draw=()=>{
+        if(video.paused||video.ended)return;
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        const sx=(video.videoWidth-width)/2,sy=(video.videoHeight-height)/2;
+        ctx.drawImage(video,sx,sy,width,height,0,0,canvas.width,canvas.height);
+        const tint=filter==="Warm"?"rgba(255,150,45,0.20)":filter==="Cool"?"rgba(55,145,255,0.20)":filter==="Mono"?"rgba(35,35,35,0.42)":filter==="Dream"?"rgba(190,110,255,0.17)":null;
+        if(filter==="Mono"){ctx.filter="grayscale(1)";ctx.drawImage(canvas,0,0);ctx.filter="none";}
+        if(tint){ctx.fillStyle=tint;ctx.fillRect(0,0,canvas.width,canvas.height);}
+        if(caption.trim()){
+          const size=Math.max(22,Math.round(canvas.width*.05));
+          ctx.font="900 "+size+"px Arial";ctx.textAlign="center";ctx.textBaseline="bottom";
+          ctx.lineWidth=Math.max(3,size*.12);ctx.strokeStyle="rgba(0,0,0,.85)";ctx.fillStyle="#fff";
+          ctx.strokeText(caption.trim(),canvas.width/2,canvas.height-24,canvas.width*.9);
+          ctx.fillText(caption.trim(),canvas.width/2,canvas.height-24,canvas.width*.9);
+        }
+        requestAnimationFrame(draw);
+      };
+      recorder.start(250);
+      await video.play();
+      draw();
+      await new Promise(resolve=>{video.onended=resolve;});
+      if(recorder.state!=="inactive")recorder.stop();
+      await finished;
+      const blob=new Blob(chunks,{type:mime});
+      const url=URL.createObjectURL(blob);
+      const link=document.createElement("a");link.href=url;link.download=(title.trim()||"clipora-video")+".webm";
+      document.body.appendChild(link);link.click();link.remove();
+      setTimeout(()=>URL.revokeObjectURL(url),30000);
+      Alert.alert("Export complete","Edited video WebM format mein save ho gayi. Original audio aur selected volume bhi include hain.");
+    }catch(e){
+      if(recorder&&recorder.state!=="inactive")recorder.stop();
+      Alert.alert("Export failed",e?.message||"Video export nahi ho saka.");
+    }finally{
+      if(video){video.pause();video.removeAttribute("src");video.load();}
+      if(canvasStream)canvasStream.getTracks().forEach(t=>t.stop());
+      if(sourceStream)sourceStream.getTracks().forEach(t=>t.stop());
+      setBusy(false);
+    }
+  };
+
   const deleteProject=async(item)=>{
     Alert.alert("Delete project?","Yeh project list se delete ho jayega.",[
       {text:"Cancel",style:"cancel"},
@@ -361,7 +434,7 @@ export default function App() {
       {activeTool==="Adjust"&&<View style={styles.toolPanel}><Text style={styles.panelTitle}>Volume</Text><View style={styles.chips}>{[0,25,50,75,100].map(v=><TouchableOpacity key={v} onPress={()=>setVolume(v)} style={[styles.chip,volume===v&&styles.chipOn]}><Text style={styles.chipText}>{v}%</Text></TouchableOpacity>)}</View><Text style={styles.hint}>Volume setting project ke saath save hogi; final audio rendering abhi enabled nahi.</Text></View>}
       <PrimaryButton title={busy?"Saving...":"Save project to cloud"} onPress={saveProject} disabled={busy||!asset}/>
       {mediaKind==="image"&&<PrimaryButton title="Export edited photo (PNG)" onPress={exportPhoto} disabled={!asset||busy}/>}
-      {mediaKind==="video"&&<Text style={styles.hint}>Video preview controls active hain. Final trimmed/music-mixed MP4 export ke liye native video rendering engine abhi add karna baqi hai.</Text>}
+      {mediaKind==="video"&&<><PrimaryButton title={busy?"Exporting video...":"Export edited video (WebM)"} onPress={exportVideo} disabled={!asset||busy}/><Text style={styles.hint}>Browser export selected crop, filter, caption aur original audio/volume ke saath WebM file banata hai. Music track mixing aur MP4 export abhi available nahi.</Text></>}
       <TouchableOpacity onPress={()=>chooseMedia(mediaKind)} style={styles.secondaryButton}><Text style={styles.secondaryText}>Choose different {mediaKind}</Text></TouchableOpacity>
     </ScrollView>}
 
