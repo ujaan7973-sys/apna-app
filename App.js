@@ -71,6 +71,10 @@ export default function App() {
   const [paymentBusy,setPaymentBusy]=useState(false);
   const [profile,setProfile]=useState({full_name:"",username:"",bio:"",avatar_url:""});
   const [profileBusy,setProfileBusy]=useState(false);
+  const [aiPrompt,setAiPrompt]=useState("");
+  const [aiTask,setAiTask]=useState("caption");
+  const [aiResult,setAiResult]=useState("");
+  const [aiBusy,setAiBusy]=useState(false);
 
   useEffect(()=>{
     let alive=true;
@@ -232,6 +236,21 @@ export default function App() {
       setAuthMessage("Password reset link aapke email par bhej diya gaya hai.");
     }catch(e){setAuthMessage(e?.message||"Reset link nahi bheja ja saka.");}
     finally{setAuthBusy(false);}
+  };
+
+  const generateAiContent=async()=>{
+    const prompt=aiPrompt.trim() || caption.trim() || title.trim();
+    if(!prompt){Alert.alert("Write a prompt","Video ya photo ke bare mein kuch likhein.");return;}
+    setAiBusy(true);setAiResult("");
+    try{
+      const {data,error}=await supabase.functions.invoke("clipora-ai",{body:{task:aiTask,prompt}});
+      if(error)throw error;
+      if(data?.error)throw new Error(data.error);
+      if(!data?.text)throw new Error("AI se jawab nahi mila. API key aur Gemini quota check karein.");
+      setAiResult(data.text);
+      if(aiTask==="rewrite")setCaption(data.text);
+    }catch(e){Alert.alert("Clipora AI",e?.message||"AI service se connection nahi ho saka.");}
+    finally{setAiBusy(false);}
   };
 
   const chooseMusic=async()=>{
@@ -546,9 +565,18 @@ export default function App() {
       <PrimaryButton title="Create new edit" onPress={goHome}/>
     </ScrollView>}
 
-    {screen==="AI"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.eyebrow}>CLIPORA AI STUDIO</Text><Text style={styles.heading}>AI Studio ✦</Text><Text style={styles.sub}>AI services are not connected yet. These features will appear when a secure provider is configured.</Text>
-      {["AI background remover","Auto captions","AI photo enhance","Object remover","Smart video templates"].map(x=><View key={x} style={styles.featureRow}><Text style={styles.featureStar}>✦</Text><Text style={styles.featureText}>{x}</Text><Text style={styles.soon}>PLANNED</Text></View>)}
-      <Text style={styles.hint}>In tools ko chalane ke liye AI service aur secure server connection chahiye. Koi fake working button nahi rakha gaya.</Text>
+    {screen==="AI"&&<ScrollView contentContainerStyle={styles.page}><Text style={styles.eyebrow}>CLIPORA AI STUDIO</Text><Text style={styles.heading}>AI Creator Studio ✦</Text><Text style={styles.sub}>Gemini-powered captions, titles aur hashtags. Apne video ka topic likhein aur generate karein.</Text>
+      <View style={styles.toolPanel}>
+        <Text style={styles.panelTitle}>What do you want to create?</Text>
+        <View style={styles.chips}>{[["caption","Captions"],["title","Titles"],["hashtags","Hashtags"],["rewrite","Improve caption"]].map(([task,label])=><TouchableOpacity key={task} onPress={()=>{setAiTask(task);setAiResult("");}} style={[styles.chip,aiTask===task&&styles.chipOn]}><Text style={styles.chipText}>{label}</Text></TouchableOpacity>)}</View>
+        <TextInput value={aiPrompt} onChangeText={setAiPrompt} multiline placeholder="Misal: Karachi beach par sunset DJ video..." placeholderTextColor={COLORS.muted} style={[styles.input,{minHeight:105,textAlignVertical:"top"}]}/>
+        <PrimaryButton title={aiBusy?"Creating...":"✦ Generate with Gemini AI"} onPress={generateAiContent} disabled={aiBusy}/>
+        {aiBusy&&<ActivityIndicator color={COLORS.cyan} style={{marginTop:12}}/>}
+        {!!aiResult&&<View style={{marginTop:16}}><Text style={styles.panelTitle}>Your AI result</Text><Text selectable style={{color:COLORS.text,lineHeight:23}}>{aiResult}</Text><PrimaryButton title="Use as editor caption" onPress={()=>{setCaption(aiResult);setScreen("Editor");}}/><TouchableOpacity onPress={()=>{setAiPrompt(aiResult);}} style={styles.secondaryButton}><Text style={styles.secondaryText}>Use result as next prompt</Text></TouchableOpacity></View>}
+      </View>
+      <View style={styles.featureRow}><Text style={styles.featureStar}>✓</Text><Text style={styles.featureText}>AI captions, titles and hashtags</Text><Text style={styles.soon}>CONNECTED</Text></View>
+      <View style={styles.featureRow}><Text style={styles.featureStar}>＋</Text><Text style={styles.featureText}>Background removal, object removal and AI video rendering</Text><Text style={styles.soon}>NOT YET</Text></View>
+      <Text style={styles.hint}>AI text generation works through your secure Supabase Edge Function. Image/video AI editing needs separate image/video processing services; they are not falsely shown as working.</Text>
     </ScrollView>}
 
     
