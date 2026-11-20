@@ -527,7 +527,7 @@ export default function App() {
   const previewWidth=Math.max(240,Math.min(340,Dimensions.get("window").width-40));
   const previewBoxStyle=ratio==="9:16"?{width:Math.round(290*9/16),height:290,alignSelf:"center"}:ratio==="4:5"?{width:232,height:290,alignSelf:"center"}:ratio==="1:1"?{width:290,height:290,alignSelf:"center"}:ratio==="16:9"?{width:previewWidth,height:Math.round(previewWidth*9/16),alignSelf:"center"}:{};
 
-  if(false && recoveryMode){
+  if(recoveryMode){
     return <SafeAreaView style={styles.container}><StatusBar barStyle="light-content" backgroundColor={COLORS.bg}/><View style={styles.authWrap}><SvgXml xml={CLIPORA_LOGO} width={112} height={112} style={{alignSelf:"center",marginBottom:14}}/><Text style={styles.brand}>Clipora <Text style={styles.brandAI}>AI</Text></Text><Text style={styles.tagline}>SET A NEW PASSWORD</Text><View style={styles.panel}><Text style={styles.heading}>Create new password</Text><Text style={styles.hint}>Email link se account verify ho gaya. Ab naya password set karein.</Text><TextInput value={newPassword} onChangeText={setNewPassword} secureTextEntry placeholder="New password (8+ characters)" placeholderTextColor={COLORS.muted} style={styles.input}/><TextInput value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry placeholder="Confirm new password" placeholderTextColor={COLORS.muted} style={styles.input}/>{!!authMessage&&<Text style={styles.message}>{authMessage}</Text>}<PrimaryButton title={authBusy?"Saving...":"Save new password"} onPress={saveNewPassword} disabled={authBusy}/></View></View></SafeAreaView>;
   }
 
