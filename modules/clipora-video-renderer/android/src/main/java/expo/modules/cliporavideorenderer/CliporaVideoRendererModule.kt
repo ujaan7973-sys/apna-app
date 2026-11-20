@@ -22,17 +22,24 @@ class CliporaVideoRendererModule : Module() {
   override fun definition() = ModuleDefinition {
     Name("CliporaVideoRenderer")
 
-    AsyncFunction("exportVideo") { inputUri: String, outputPath: String, width: Int, height: Int, musicUri: String, promise: Promise ->
+    AsyncFunction("exportVideo") { inputUri: String, outputPath: String, width: Int, height: Int, musicUri: String, trimStartMs: Long, trimEndMs: Long, promise: Promise ->
       try {
         val context = appContext.reactContext ?: throw IllegalStateException("Android context unavailable")
         val outputFile = File(outputPath)
         outputFile.parentFile?.mkdirs()
         if (outputFile.exists()) outputFile.delete()
 
+        val baseItem = MediaItem.Builder().setUri(Uri.parse(inputUri))
+        if (trimStartMs > 0L || trimEndMs > trimStartMs) {
+          val clipping = MediaItem.ClippingConfiguration.Builder()
+            .setStartPositionMs(trimStartMs.coerceAtLeast(0L))
+          if (trimEndMs > trimStartMs) clipping.setEndPositionMs(trimEndMs)
+          baseItem.setClippingConfiguration(clipping.build())
+        }
         val presentation = Presentation.createForWidthAndHeight(
           width.coerceAtLeast(2), height.coerceAtLeast(2), Presentation.LAYOUT_SCALE_TO_FIT
         )
-        val videoItem = EditedMediaItem.Builder(MediaItem.fromUri(Uri.parse(inputUri)))
+        val videoItem = EditedMediaItem.Builder(baseItem.build())
           .setEffects(Effects(emptyList(), listOf(presentation)))
           .build()
 
