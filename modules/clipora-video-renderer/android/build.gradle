@@ -3,6 +3,10 @@ apply plugin: 'expo-module-gradle-plugin'
 
 android {
   namespace "expo.modules.cliporavideorenderer"
+
+  defaultConfig {
+    versionName "1.0"
+  }
 }
 
 dependencies {
